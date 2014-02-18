@@ -1,12 +1,27 @@
 local EN_GB_PAT_CHAT_MSG_SPELL_SELF_DAMAGE = "^Your (.+) c*[rh]its";
 
-Swaine = CreateFrame("FRAME", "Swaine", UIParent);
+local ERR_UNEXPECTED_NIL_VALUE = "Expected the following value but got nil."
 
-local this = Swaine;
+local SCRIPTHANDLER_ON_EVENT = "OnEvent";
+local SCRIPTHANDLER_ON_UPDATE = "OnUpdate";
+
+
+----------------------------------------------------------------
+-- SAMUEL ADDON ------------------------------------------------
+----------------------------------------------------------------
+
+
+Samuel = CreateFrame("FRAME", "Samuel", UIParent);
+
+local this = Samuel;
+
+----------------------------------------------------------------
+-- PRIVATE VARIABLES -------------------------------------------
+----------------------------------------------------------------
 
 local _initialisation_event = "ADDON_LOADED";
 
-local _overlay;
+local _progress;
 local _slamMarker;
 
 local _updateRunTime = 0;
@@ -22,6 +37,10 @@ local _ratio;
 
 local _default_width = 200;
 local _default_height = 5;
+
+----------------------------------------------------------------
+-- LOCAL UP VALUES FOR SPEED -----------------------------------
+----------------------------------------------------------------
 
 local math_min = math.min;
 local string_find = string.find;
@@ -45,6 +64,8 @@ local _updateSlamMarker = function()
 
 end
 
+--------
+
 local _updateSwingTime = function()
 
 	_total_swing_time,_ = UnitAttackSpeed("player"); --http://vanilla-wow.wikia.com/wiki/API_UnitAttackSpeed
@@ -52,6 +73,8 @@ local _updateSwingTime = function()
 	_updateSlamMarker();
 
 end
+
+--------
 
 local _createSwingResetActionsList = function()
 
@@ -64,35 +87,9 @@ local _createSwingResetActionsList = function()
 
 end
 
---[[ CHAT_MSG_COMBAT_SELF_HITS http://www.wowwiki.com/Events/Removed
-local _chat_msg_combat_self_hitsHandler = function(self, msg)
-	
-	log("Confirmed swing. Reset our timer.");
-	_resetSwingTimer();
-
-end
-
--- CHAT_MSG_COMBAT_SELF_MISSES http://www.wowwiki.com/Events/Removed
-local _chat_msg_combat_self_missesHandler = function(self, msg)
-
-	log("Confirmed swing. Reset our timer.");
-	_resetSwingTimer();
-
-end
-
--- UNIT_ATTACK_SPEED http://www.wowwiki.com/Events/Unit_Info
-local _unit_attack_speedHandler = function(self)
-
-	log("Unit attack speed changed");
-	_updateSwingTime();
-
-end
-
---]]------
+--------
 
 local _eventHandler = function()
-
-	-- log(event);
 
 	if event == "PLAYER_REGEN_ENABLED" then --http://www.wowwiki.com/Events/Combat#PLAYER_REGEN_ENABLED
 	
@@ -105,17 +102,17 @@ local _eventHandler = function()
 	
 	elseif event == "CHAT_MSG_COMBAT_SELF_HITS" then
 	
-		-- prt("Confirmed swing. Reset our timer.");
+		-- Confirmed swing. Reset our timer
 		_resetSwingTimer();
 	
 	elseif event == "CHAT_MSG_COMBAT_SELF_MISSES" then
 	
-		-- prt("Confirmed swing. Reset our timer.");
+		-- Confirmed swing. Reset our timer
 		_resetSwingTimer();
 	
 	elseif event == "UNIT_ATTACK_SPEED" then
 	
-		-- prt("Unit attack speed changed");
+		-- Unit attack speed changed
 		_updateSwingTime();
 	
 	elseif event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
@@ -142,10 +139,6 @@ end
 --------
 
 local _registerRequiredEvents = function()
-
-	--Evert.addEvent("CHAT_MSG_COMBAT_SELF_HITS", _chat_msg_combat_self_hitsHandler);
-	--Evert.addEvent("CHAT_MSG_COMBAT_SELF_MISSES", _chat_msg_combat_self_missesHandler);
-	--Evert.addEvent("UNIT_ATTACK_SPEED", _unit_attack_speedHandler);
 	
 	-- This is here temporarily
 	this:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS");
@@ -172,14 +165,12 @@ local _updateDisplay = function()
 	-- This is the actual update loop.
 	while (_updateRunTime >= _update_display_timer) do
 		
-		-- prt("Updating Swaine bar");
-		
 		-- MORE DOTS MORE DOTS!!!
 		
 			-- Cause an emergency escape
 			if not _total_swing_time then
 			
-				_overlay:SetScript(SCRIPTHANDLER_ON_UPDATE, nil);
+				_progress:SetScript(SCRIPTHANDLER_ON_UPDATE, nil);
 				error(ERR_UNEXPECTED_NIL_VALUE..": _total_swing_time");
 				
 			end
@@ -189,7 +180,7 @@ local _updateDisplay = function()
 			-- Use the native math library to prevent us overshooting our bar length.
 			_ratio = math_min((_current_swing_time / _total_swing_time), 1);
 			
-			_overlay:SetWidth(_ratio * _default_width);
+			_progress:SetWidth(_ratio * _default_width);
 		
 		-- OK STOP DOTS!!!
 		
@@ -204,22 +195,22 @@ end
 
 --------
 
-local _createProgressOverlay = function()
+local _createProgressBar = function()
 	
-	_overlay = CreateFrame("FRAME", nil, this);
+	_progress = CreateFrame("FRAME", nil, this);
 	
-	_overlay:SetBackdrop(
+	_progress:SetBackdrop(
 		{
 			["bgFile"] = "Interface/Tooltips/UI-Tooltip-Background"
 		}
 	);
 	
-	_overlay:SetBackdropColor(1, 1, 1, 1);
+	_progress:SetBackdropColor(1, 1, 1, 1);
 	
-	_overlay:SetWidth(1);
-	_overlay:SetHeight(_default_height);
+	_progress:SetWidth(1);
+	_progress:SetHeight(_default_height);
 	
-	_overlay:SetPoint("LEFT", 0, 0);
+	_progress:SetPoint("LEFT", 0, 0);
 	
 end
 
@@ -261,7 +252,7 @@ local _initialise = function()
 	
 	this:SetPoint("CENTER", 0, -120);
 	
-	_createProgressOverlay();
+	_createProgressBar();
 	_createSlamMarker();
 	
 	_resetSwingTimer();
