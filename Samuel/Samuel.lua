@@ -83,6 +83,7 @@ local _createSwingResetActionsList = function()
 		["Slam"] = true,
 		["Cleave"] = true,
 		["Raptor Strike"] = true,
+		["Maul"] = true,
 	}
 
 end
