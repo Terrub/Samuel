@@ -5,15 +5,21 @@ local ERR_UNEXPECTED_NIL_VALUE = "Expected the following value but got nil."
 local SCRIPTHANDLER_ON_EVENT = "OnEvent";
 local SCRIPTHANDLER_ON_UPDATE = "OnUpdate";
 
-
 ----------------------------------------------------------------
 -- SAMUEL ADDON ------------------------------------------------
 ----------------------------------------------------------------
 
-
 Samuel = CreateFrame("FRAME", "Samuel", UIParent);
 
 local this = Samuel;
+
+----------------------------------------------------------------
+-- INTERNAL CONSTANTS ------------------------------------------
+----------------------------------------------------------------
+
+local _SLAM_CAST_TIME = 1.5;
+local _SLAM_TOTAL_RANKS_IMP_SLAM = 5;
+local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5;
 
 ----------------------------------------------------------------
 -- PRIVATE VARIABLES -------------------------------------------
@@ -24,11 +30,16 @@ local _initialisation_event = "ADDON_LOADED";
 local _progress;
 local _slamMarker;
 
+local _showSlamMarker = true;
+
 local _updateRunTime = 0;
 local _update_display_timer = ( 1 / 30 ); -- update FPS target;
 local _last_update = GetTime();
 local _current_swing_time = 0; -- The x in x/y * 100 percentage calc.
 local _total_swing_time = 1; -- the y in x/y * 100 percentage calc.
+--local _fps = 30;
+
+local _rank_imp_slam = 0;
 
 local _swing_reset_actions;
 
@@ -49,6 +60,21 @@ local string_find = string.find;
 -- PRIVATE FUNCTIONS -------------------------------------------
 ----------------------------------------------------------------
 
+local _report = function(label, message)
+
+	label = tostring(label);
+	message = tostring(message);
+
+	local str = "";
+	
+	str = str.."|cff22ff22Samuel|r - |cff999999"..label..":|r "..message;
+
+	DEFAULT_CHAT_FRAME:AddMessage(str);
+
+end
+
+--------
+
 local _resetSwingTimer = function()
 
 	_last_swing = GetTime();
@@ -59,8 +85,27 @@ end
 
 local _updateSlamMarker = function()
 
-	-- length = _default_width / _total_swing_time ( * 1.5 if 0/5 imp. slam)
-	_slamMarker:SetWidth(_default_width / _total_swing_time);
+	_slamMarker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_rank_imp_slam / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
+
+end
+
+--------
+
+local _setImpSlamRank = function(rank)
+
+	rank = tonumber(rank);
+
+	if not rank then
+	
+		error("Usage: _setImpSlamRank(rank <number>)");
+	
+	end
+	
+	_rank_imp_slam = rank;
+		
+	_report("Saved Improved Slam rank", rank);
+	
+	_updateSlamMarker();
 
 end
 
@@ -236,6 +281,74 @@ end
 
 --------
 
+local _printSlashCommandList = function()
+
+	-- for loop through our local slash command list and add all our cmds to the return string.
+
+	_report("Usage",
+		[[
+		   /sam impSlam [0-5]
+		   /sam showSlamMarker <toggle>"
+		]]
+	);
+
+end
+
+local _toggleSlamMarkerVisibility = function()
+
+	if _showSlamMarker then
+		
+		_slamMarker:Hide();
+		_report("Slam marker is now", "Hidden");
+		
+	else
+	
+		_slamMarker:Show();
+		_report("Slam marker is now", "Shown");
+		
+	end
+
+end
+
+--------
+
+local _slashCmdHandler = function(message, chat_frame)
+
+	local _,_,cmd, params = string_find(message, "^(%S+) *(.*)");
+	
+	if not cmd then 
+	
+		_printSlashCommandList();
+		
+	end
+	
+	cmd = tostring(cmd);
+		
+	if cmd == "impSlam" then
+		
+		params = tonumber(params);
+		
+		if type(params) ~= "number"
+			or params < 0
+			or params > _SLAM_TOTAL_RANKS_IMP_SLAM then
+		
+			_report("Usage", "/sam impSlam [0-".._SLAM_TOTAL_RANKS_IMP_SLAM.."]");
+			return;
+			
+		end
+	
+		_setImpSlamRank(params);
+		
+	elseif cmd == "showSlamMarker" then
+	
+		_toggleSlamMarkerVisibility();
+		
+	end
+
+end;
+
+--------
+
 local _initialise = function()
 
 	this:UnregisterEvent(_initialisation_event);
@@ -274,6 +387,13 @@ local _initialise = function()
 	this:SetScript(SCRIPTHANDLER_ON_UPDATE, _updateDisplay);
 	
 end
+
+-- Add slashcommand match entries into the global namespace for the client to pick up.
+SLASH_SAMUEL1 = "/sam";
+SLASH_SAMUEL2 = "/samuel";
+
+-- And add a handler to react on the above matches.
+SlashCmdList["SAMUEL"] = _slashCmdHandler;
 
 this:SetScript(SCRIPTHANDLER_ON_EVENT, _initialise);
 this:RegisterEvent(_initialisation_event);
