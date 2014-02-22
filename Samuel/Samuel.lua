@@ -41,6 +41,11 @@ local _total_swing_time = 1; -- the y in x/y * 100 percentage calc.
 
 local _rank_imp_slam = 0;
 
+local _unit_name;
+local _realm_name;
+local _profile_id;
+local _db;
+
 local _swing_reset_actions;
 
 local _last_swing;
@@ -48,6 +53,10 @@ local _ratio;
 
 local _default_width = 200;
 local _default_height = 5;
+
+local _default_db = {
+	["rank_imp_slam"] = 0;
+};
 
 ----------------------------------------------------------------
 -- LOCAL UP VALUES FOR SPEED -----------------------------------
@@ -93,6 +102,9 @@ end
 
 local _setImpSlamRank = function(rank)
 
+	-- Stop arsin about!
+	if rank == _rank_imp_slam then return end;
+
 	rank = tonumber(rank);
 
 	if not rank then
@@ -101,10 +113,15 @@ local _setImpSlamRank = function(rank)
 	
 	end
 	
+	-- Update local var
 	_rank_imp_slam = rank;
-		
-	_report("Saved Improved Slam rank", rank);
 	
+	-- Update local database
+	_db["rank_imp_slam"] = _rank_imp_slam;
+	
+	_report("Saved Improved Slam rank", _rank_imp_slam);
+	
+	-- Slam marker is dependant on rank so update it now.
 	_updateSlamMarker();
 
 end
@@ -170,6 +187,11 @@ local _eventHandler = function()
 			_resetSwingTimer();
 			
 		end
+		
+	elseif event == "PLAYER_LOGOUT" then
+	
+		-- Commit to local storage
+		SamuelDB[_profile_id] = _db;
 	
 	elseif event == "PLAYER_LOGIN" then
 	
@@ -194,6 +216,7 @@ local _registerRequiredEvents = function()
 	this:RegisterEvent("PLAYER_REGEN_DISABLED");
 	this:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE");
 	this:RegisterEvent("PLAYER_LOGIN");
+	this:RegisterEvent("PLAYER_LOGOUT");
 
 end
 
@@ -332,7 +355,7 @@ local _slashCmdHandler = function(message, chat_frame)
 			or params < 0
 			or params > _SLAM_TOTAL_RANKS_IMP_SLAM then
 		
-			_report("Usage", "/sam impSlam [0-".._SLAM_TOTAL_RANKS_IMP_SLAM.."]");
+			_report("Current rank Improved Slam", _rank_imp_slam);
 			return;
 			
 		end
@@ -346,6 +369,34 @@ local _slashCmdHandler = function(message, chat_frame)
 	end
 
 end;
+
+--------
+
+local _loadProfileID = function()
+
+	_unit_name = UnitName("player");
+	_realm_name = GetRealmName();
+	_profile_id = _unit_name.."-".._realm_name;
+	
+end
+
+--------
+
+local _loadSavedVariables = function()
+
+	if not SamuelDB then
+		
+		SamuelDB = {
+			[_profile_id] = _default_db
+		};
+		
+	end
+
+	_db = SamuelDB[_profile_id];
+	
+	_rank_imp_slam = _db["rank_imp_slam"]
+
+end
 
 --------
 
@@ -373,6 +424,9 @@ local _initialise = function()
 	_createSwingResetActionsList();
 	
 	_registerRequiredEvents();
+	
+	_loadProfileID();
+	_loadSavedVariables();
 	
 	-- Turn off by default unless we're in combat
 	if not UnitAffectingCombat("player") then
