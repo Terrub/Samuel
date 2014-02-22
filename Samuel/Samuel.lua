@@ -188,6 +188,10 @@ local _eventHandler = function()
 			
 		end
 		
+	elseif event == "CHARACTER_POINTS_CHANGED" then
+	
+		_report("CHARACTER_POINTS_CHANGED", arg1);
+		
 	elseif event == "PLAYER_LOGOUT" then
 	
 		-- Commit to local storage
@@ -215,6 +219,7 @@ local _registerRequiredEvents = function()
 	this:RegisterEvent("PLAYER_REGEN_ENABLED");
 	this:RegisterEvent("PLAYER_REGEN_DISABLED");
 	this:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE");
+	this:RegisterEvent("CHARACTER_POINTS_CHANGED");
 	this:RegisterEvent("PLAYER_LOGIN");
 	this:RegisterEvent("PLAYER_LOGOUT");
 
@@ -384,11 +389,9 @@ end
 
 local _loadSavedVariables = function()
 
-	if not SamuelDB then
+	if not SamuelDB[_profile_id] then
 		
-		SamuelDB = {
-			[_profile_id] = _default_db
-		};
+		SamuelDB[_profile_id] = _default_db
 		
 	end
 
