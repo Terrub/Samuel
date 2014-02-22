@@ -327,11 +327,13 @@ local _toggleSlamMarkerVisibility = function()
 	if _showSlamMarker then
 		
 		_slamMarker:Hide();
+		_showSlamMarker = false;
 		_report("Slam marker is now", "Hidden");
 		
 	else
 	
 		_slamMarker:Show();
+		_showSlamMarker = true;
 		_report("Slam marker is now", "Shown");
 		
 	end
@@ -397,7 +399,7 @@ local _loadSavedVariables = function()
 
 	_db = SamuelDB[_profile_id];
 	
-	_rank_imp_slam = _db["rank_imp_slam"]
+	_rank_imp_slam = _db["rank_imp_slam"];
 
 end
 
