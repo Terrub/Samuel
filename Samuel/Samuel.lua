@@ -391,10 +391,14 @@ end
 
 local _loadSavedVariables = function()
 
+	-- First time install
+	if not SamuelDB then
+		SamuelDB = {};
+	end
+	
+	-- New char profile
 	if not SamuelDB[_profile_id] then
-		
 		SamuelDB[_profile_id] = _default_db
-		
 	end
 
 	_db = SamuelDB[_profile_id];
