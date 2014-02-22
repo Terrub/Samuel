@@ -3,9 +3,12 @@ Samuel
 
 Slam/swing timer
 
-Static swing timer with 1 second Slam marker for warriors.
+Static swing timer with 1 - 1.5 second Slam marker for warriors.
 I intend to make the thing customisable eventually but right now it's a static 200px wide 5px high bar.
 It indicates the next expected swing to happen using a white bar that fills up a darker background.
+
+-- SLASH COMMANDS --
+for options type /sam or /samuel
 
 -- INSTALLATION --
 
