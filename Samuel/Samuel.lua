@@ -4,6 +4,8 @@ local ERR_UNEXPECTED_NIL_VALUE = "Expected the following value but got nil."
 
 local SCRIPTHANDLER_ON_EVENT = "OnEvent";
 local SCRIPTHANDLER_ON_UPDATE = "OnUpdate";
+local SCRIPTHANDLER_ON_DRAG_START = "OnDragStart";
+local SCRIPTHANDLER_ON_DRAG_STOP = "OnDragStop";
 
 ----------------------------------------------------------------
 -- SAMUEL ADDON ------------------------------------------------
@@ -31,6 +33,7 @@ local _progress;
 local _slamMarker;
 
 local _showSlamMarker = true;
+local _isLockedToScreen = true;
 
 local _updateRunTime = 0;
 local _update_display_timer = ( 1 / 30 ); -- update FPS target;
@@ -56,6 +59,9 @@ local _default_height = 5;
 
 local _default_db = {
 	["rank_imp_slam"] = 0;
+	["position_point"] = "CENTER";
+	["position_x"] = 0;
+	["position_y"] = -120;
 };
 
 ----------------------------------------------------------------
@@ -80,6 +86,23 @@ local _report = function(label, message)
 
 	DEFAULT_CHAT_FRAME:AddMessage(str);
 
+end
+
+--------
+
+local _resetVisibility = function()
+
+	-- Turn off by default unless we're in combat
+	if not UnitAffectingCombat("player") then
+		
+		this:Hide();
+	
+	else
+		
+		this:Show();
+	
+	end
+	
 end
 
 --------
@@ -313,14 +336,17 @@ local _printSlashCommandList = function()
 
 	-- for loop through our local slash command list and add all our cmds to the return string.
 
-	_report("Usage",
+	_report("Slash commands",
 		[[
-		   /sam impSlam [0-5]
-		   /sam showSlamMarker <toggle>"
-		]]
+		   /sam impSlam [|cffffff330|r-|cffffff335|r] |cff999999-- Set your current rank of the "Improved Slam" talent.|r
+		   /sam impSlam |cff999999-- Display the current registered rank of "Improved Slam".|r
+		   /sam showSlamMarker <|cff9999fftoggle|r> |cff999999-- Toggle the red slam marker ON or OFF.|r
+		   /sam lock <|cff9999fftoggle|r> |cff999999-- Toggle the ability to move the bar ON or OFF.|r]]
 	);
 
 end
+
+--------
 
 local _toggleSlamMarkerVisibility = function()
 
@@ -336,6 +362,78 @@ local _toggleSlamMarkerVisibility = function()
 		_showSlamMarker = true;
 		_report("Slam marker is now", "Shown");
 		
+	end
+
+end
+
+--------
+
+local _startMoving = function()
+
+	this:StartMoving();
+
+end
+
+--------
+
+local _stopMovingOrSizing = function()
+
+	this:StopMovingOrSizing();
+	
+	local _;
+	
+	_,_, _db["position_point"], _db["position_x"], _db["position_y"] = this:GetPoint();
+
+end
+
+--------
+
+local _toggleLockToScreen = function()
+
+	if _isLockedToScreen then
+		
+		-- Make the left mouse button trigger drag events
+		this:RegisterForDrag("LeftButton");
+	
+		-- Set the start and stop moving events on triggered events
+		this:SetScript(SCRIPTHANDLER_ON_DRAG_START, _startMoving);
+		this:SetScript(SCRIPTHANDLER_ON_DRAG_STOP, _stopMovingOrSizing);
+		
+		-- Make the frame react to the mouse
+		this:EnableMouse(true);
+		
+		-- Stop the frame from being movable
+		this:SetMovable(true);
+		
+		-- Show ourselves so we can be moved
+		this:Show();
+		
+		_isLockedToScreen = false;
+		
+		_report("Swing timer bar", "Unlocked");
+	
+	else
+	
+		-- Stop the frame from being movable
+		this:SetMovable(false);
+	
+		-- Remove all buttons from triggering drag events
+		this:RegisterForDrag();
+		
+		-- Nil the 'OnSragStart' script event
+		this:SetScript(SCRIPTHANDLER_ON_DRAG_START, nil);
+		this:SetScript(SCRIPTHANDLER_ON_DRAG_STOP, nil);
+		
+		-- Disable mouse interactivity on the frame
+		this:EnableMouse(false)
+	
+		-- reset our visibility
+		_resetVisibility();
+	
+		_isLockedToScreen = true;
+		
+		_report("Swing timer bar", "Locked");
+	
 	end
 
 end
@@ -373,6 +471,10 @@ local _slashCmdHandler = function(message, chat_frame)
 	
 		_toggleSlamMarkerVisibility();
 		
+	elseif cmd == "lock" then
+	
+		_toggleLockToScreen();
+		
 	end
 
 end;
@@ -402,7 +504,8 @@ local _loadSavedVariables = function()
 	end
 
 	_db = SamuelDB[_profile_id];
-	
+		
+	-- local value for speed
 	_rank_imp_slam = _db["rank_imp_slam"];
 
 end
@@ -424,8 +527,6 @@ local _initialise = function()
 	
 	this:SetBackdropColor(0, 0, 0, 1);
 	
-	this:SetPoint("CENTER", 0, -120);
-	
 	_createProgressBar();
 	_createSlamMarker();
 	
@@ -437,12 +538,9 @@ local _initialise = function()
 	_loadProfileID();
 	_loadSavedVariables();
 	
-	-- Turn off by default unless we're in combat
-	if not UnitAffectingCombat("player") then
-		
-		this:Hide();
-		
-	end
+	this:SetPoint(_db["position_point"], _db["position_x"], _db["position_y"]);
+	
+	_resetVisibility();
 	
 	this:SetScript(SCRIPTHANDLER_ON_EVENT, _eventHandler);
 	
