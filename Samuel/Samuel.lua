@@ -29,11 +29,10 @@ local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5;
 
 local _initialisation_event = "ADDON_LOADED";
 
-local _progress;
-local _slamMarker;
+local _progress_bar;
+local _slam_marker;
 
-local _showSlamMarker = true;
-local _isLockedToScreen = true;
+local _is_locked_to_screen = true;
 
 local _updateRunTime = 0;
 local _update_display_timer = ( 1 / 30 ); -- update FPS target;
@@ -58,6 +57,7 @@ local _default_width = 200;
 local _default_height = 5;
 
 local _default_db = {
+	["is_slam_marker_shown"] = false;
 	["rank_imp_slam"] = 0;
 	["position_point"] = "CENTER";
 	["position_x"] = 0;
@@ -116,8 +116,8 @@ end
 --------
 
 local _updateSlamMarker = function()
-
-	_slamMarker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_rank_imp_slam / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
+	
+	_slam_marker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_rank_imp_slam / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
 
 end
 
@@ -161,7 +161,7 @@ end
 
 --------
 
-local _createSwingResetActionsList = function()
+local _populateSwingResetActionsList = function()
 
 	_swing_reset_actions = {
 		["Heroic Strike"] = true,
@@ -267,7 +267,7 @@ local _updateDisplay = function()
 			-- Cause an emergency escape
 			if not _total_swing_time then
 			
-				_progress:SetScript(SCRIPTHANDLER_ON_UPDATE, nil);
+				this:SetScript(SCRIPTHANDLER_ON_UPDATE, nil);
 				error(ERR_UNEXPECTED_NIL_VALUE..": _total_swing_time");
 				
 			end
@@ -277,7 +277,7 @@ local _updateDisplay = function()
 			-- Use the native math library to prevent us overshooting our bar length.
 			_ratio = math_min((_current_swing_time / _total_swing_time), 1);
 			
-			_progress:SetWidth(_ratio * _default_width);
+			_progress_bar:SetWidth(_ratio * _default_width);
 		
 		-- OK STOP DOTS!!!
 		
@@ -294,39 +294,83 @@ end
 
 local _createProgressBar = function()
 	
-	_progress = CreateFrame("FRAME", nil, this);
+	_progress_bar = CreateFrame("FRAME", nil, this);
 	
-	_progress:SetBackdrop(
+	_progress_bar:SetBackdrop(
 		{
-			["bgFile"] = "Interface/Tooltips/UI-Tooltip-Background"
+			["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"
 		}
 	);
 	
-	_progress:SetBackdropColor(1, 1, 1, 1);
+	_progress_bar:SetBackdropColor(0.7, 0.7, 0.7, 1);
 	
-	_progress:SetWidth(1);
-	_progress:SetHeight(_default_height);
+	_progress_bar:SetWidth(1);
+	_progress_bar:SetHeight(_default_height);
 	
-	_progress:SetPoint("LEFT", 0, 0);
+	_progress_bar:SetPoint("LEFT", 0, 0);
 	
+end
+
+--------
+
+local _hide_slam_marker = function()
+
+	_slam_marker:Hide();
+	_db["is_slam_marker_shown"] = false;
+
+end
+
+--------
+
+local _show_slam_marker = function()
+
+	_slam_marker:Show();
+	_db["is_slam_marker_shown"] = true;
+
+end
+
+--------
+
+local _toggleSlamMarkerVisibility = function()
+
+	if _db["is_slam_marker_shown"] then
+		
+		_hide_slam_marker();
+		_report("Slam marker is now", "Hidden");
+		
+	else
+	
+		_show_slam_marker();
+		_report("Slam marker is now", "Shown");
+		
+	end
+
 end
 
 --------
 
 local _createSlamMarker = function()
 	
-	_slamMarker = CreateFrame("FRAME", nil, this);
+	_slam_marker = CreateFrame("FRAME", nil, this);
 	
-	_slamMarker:SetBackdrop(
+	_slam_marker:SetBackdrop(
 		{
-			["bgFile"] = "Interface/Tooltips/UI-Tooltip-Background"
+			["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"
 		}
 	);
-	_slamMarker:SetBackdropColor(1, 0, 0, 0.9);
+	_slam_marker:SetBackdropColor(1, 0, 0, 0.7);
 	
-	_slamMarker:SetPoint("RIGHT", 0, 0);
+	_slam_marker:SetPoint("RIGHT", 0, 0);
 	
-	_slamMarker:SetHeight(_default_height);
+	_slam_marker:SetHeight(_default_height);
+	
+	_slam_marker:SetFrameLevel(_progress_bar:GetFrameLevel()+1);
+	
+	if _db["is_slam_marker_shown"] then
+		_show_slam_marker();
+	else
+		_hide_slam_marker();
+	end
 	
 end
 
@@ -343,26 +387,6 @@ local _printSlashCommandList = function()
 		   /sam showSlamMarker <|cff9999fftoggle|r> |cff999999-- Toggle the red slam marker ON or OFF.|r
 		   /sam lock <|cff9999fftoggle|r> |cff999999-- Toggle the ability to move the bar ON or OFF.|r]]
 	);
-
-end
-
---------
-
-local _toggleSlamMarkerVisibility = function()
-
-	if _showSlamMarker then
-		
-		_slamMarker:Hide();
-		_showSlamMarker = false;
-		_report("Slam marker is now", "Hidden");
-		
-	else
-	
-		_slamMarker:Show();
-		_showSlamMarker = true;
-		_report("Slam marker is now", "Shown");
-		
-	end
 
 end
 
@@ -390,7 +414,7 @@ end
 
 local _toggleLockToScreen = function()
 
-	if _isLockedToScreen then
+	if _is_locked_to_screen then
 		
 		-- Make the left mouse button trigger drag events
 		this:RegisterForDrag("LeftButton");
@@ -408,7 +432,7 @@ local _toggleLockToScreen = function()
 		-- Show ourselves so we can be moved
 		this:Show();
 		
-		_isLockedToScreen = false;
+		_is_locked_to_screen = false;
 		
 		_report("Swing timer bar", "Unlocked");
 	
@@ -430,7 +454,7 @@ local _toggleLockToScreen = function()
 		-- reset our visibility
 		_resetVisibility();
 	
-		_isLockedToScreen = true;
+		_is_locked_to_screen = true;
 		
 		_report("Swing timer bar", "Locked");
 	
@@ -443,12 +467,6 @@ end
 local _slashCmdHandler = function(message, chat_frame)
 
 	local _,_,cmd, params = string_find(message, "^(%S+) *(.*)");
-	
-	if not cmd then 
-	
-		_printSlashCommandList();
-		
-	end
 	
 	cmd = tostring(cmd);
 		
@@ -474,7 +492,11 @@ local _slashCmdHandler = function(message, chat_frame)
 	elseif cmd == "lock" then
 	
 		_toggleLockToScreen();
-		
+	
+	else
+	
+		_printSlashCommandList();
+	
 	end
 
 end;
@@ -513,7 +535,12 @@ end
 --------
 
 local _initialise = function()
-
+	
+	_loadProfileID();
+	_loadSavedVariables();
+	
+	_populateSwingResetActionsList();
+	
 	this:UnregisterEvent(_initialisation_event);
 	
 	this:SetWidth(_default_width);
@@ -521,30 +548,24 @@ local _initialise = function()
 	
 	this:SetBackdrop(
 		{
-			["bgFile"] = "Interface/Tooltips/UI-Tooltip-Background"
+			["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"
 		}
 	);
 	
 	this:SetBackdropColor(0, 0, 0, 1);
 	
+	this:SetPoint(_db["position_point"], _db["position_x"], _db["position_y"]);
+	
+	-- CREATE CHILDREN
 	_createProgressBar();
 	_createSlamMarker();
 	
 	_resetSwingTimer();
-	_createSwingResetActionsList();
+	_resetVisibility();
 	
 	_registerRequiredEvents();
 	
-	_loadProfileID();
-	_loadSavedVariables();
-	
-	this:SetPoint(_db["position_point"], _db["position_x"], _db["position_y"]);
-	
-	_resetVisibility();
-	
 	this:SetScript(SCRIPTHANDLER_ON_EVENT, _eventHandler);
-	
-	-- We need to update, so set the update display script.
 	this:SetScript(SCRIPTHANDLER_ON_UPDATE, _updateDisplay);
 	
 end
