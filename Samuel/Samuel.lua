@@ -1,6 +1,6 @@
-local EN_GB_PAT_CHAT_MSG_SPELL_SELF_DAMAGE = "^Your (.+) c*[rh]its";
+local EN_GB_PAT_CHAT_MSG_SPELL_SELF_DAMAGE = "^Your (.-) ";
 
-local ERR_UNEXPECTED_NIL_VALUE = "Expected the following value but got nil."
+local ERR_UNEXPECTED_NIL_VALUE = "Expected the following value but got nil:"
 
 local SCRIPTHANDLER_ON_EVENT = "OnEvent";
 local SCRIPTHANDLER_ON_UPDATE = "OnUpdate";
@@ -37,6 +37,7 @@ local _is_locked_to_screen = true;
 local _updateRunTime = 0;
 local _update_display_timer = ( 1 / 30 ); -- update FPS target;
 local _last_update = GetTime();
+local _proposed_swing_time = 1;
 local _current_swing_time = 0; -- The x in x/y * 100 percentage calc.
 local _total_swing_time = 1; -- the y in x/y * 100 percentage calc.
 --local _fps = 30;
@@ -107,17 +108,19 @@ end
 
 --------
 
-local _resetSwingTimer = function()
-
-	_last_swing = GetTime();
+local _updateSlamMarker = function()
+	
+	_slam_marker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_rank_imp_slam / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
 
 end
 
 --------
 
-local _updateSlamMarker = function()
-	
-	_slam_marker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_rank_imp_slam / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
+local _resetSwingTimer = function()
+
+	_last_swing = GetTime();
+	_total_swing_time = _proposed_swing_time;
+	_updateSlamMarker();
 
 end
 
@@ -153,10 +156,8 @@ end
 
 local _updateSwingTime = function()
 
-	_total_swing_time,_ = UnitAttackSpeed("player"); --http://vanilla-wow.wikia.com/wiki/API_UnitAttackSpeed
+	_proposed_swing_time,_ = UnitAttackSpeed("player"); --http://vanilla-wow.wikia.com/wiki/API_UnitAttackSpeed
 	
-	_updateSlamMarker();
-
 end
 
 --------
@@ -164,10 +165,10 @@ end
 local _populateSwingResetActionsList = function()
 
 	_swing_reset_actions = {
-		["Heroic Strike"] = true,
+		["Heroic"] = true,
 		["Slam"] = true,
 		["Cleave"] = true,
-		["Raptor Strike"] = true,
+		["Raptor"] = true,
 		["Maul"] = true,
 	}
 

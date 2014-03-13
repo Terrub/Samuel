@@ -4,6 +4,6 @@
 ## Author: Terrub le Programmer
 ## Version: 0.0.1
 ## Dependencies:
-## SavedVariables:
+## SavedVariables: SamuelDB
 
 Samuel.lua
