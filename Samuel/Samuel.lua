@@ -8,6 +8,8 @@ local tableInsert = table.insert;
 local tableRemove = table.remove;
 local tostring = tostring;
 local type = type;
+local error = error;
+local pairs = pairs;
 
 ----------------------------------------------------------------
 -- CONSTANTS THAT SHOULD BE GLOBAL PROBABLY --------------------
@@ -137,16 +139,29 @@ local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5;
 --			perhaps an in-game editor, we can change the version
 --			and keep a record per version.
 
-local IS_SLAM_MARKER_SHOWN = "is_slam_marker_shown";
+local IS_MARKER_SHOWN = "is_marker_shown";
 local IS_ADDON_ACTIVATED = "is_addon_activated";
 local IS_ADDON_LOCKED = "is_addon_locked";
-local RANK_IMP_SLAM = "rank_imp_slam";
+local MARKER_SIZE = "marker_size";
 local POSITION_POINT = "position_point";
 local POSITION_X = "position_x";
 local POSITION_Y = "position_y";
 local ACTIVE_ALPHA = "active_alpha";
 local INACTIVE_ALPHA = "inactive_alpha";
 local DB_VERSION = "db_version";
+
+local _default_db = {
+	[IS_MARKER_SHOWN] = false;
+	[IS_ADDON_ACTIVATED] = false;
+	[IS_ADDON_LOCKED] = true;
+	[MARKER_SIZE] = 1.5;
+	[POSITION_POINT] = "CENTER";
+	[POSITION_X] = 0;
+	[POSITION_Y] = -120;
+	[ACTIVE_ALPHA] = 1;
+	[INACTIVE_ALPHA] = 0.3;
+	[DB_VERSION] = 3;
+};
 
 ----------------------------------------------------------------
 -- PRIVATE VARIABLES -------------------------------------------
@@ -155,7 +170,7 @@ local DB_VERSION = "db_version";
 local _initialisation_event = "ADDON_LOADED";
 
 local _progress_bar;
-local _slam_marker;
+local _marker;
 
 local _auto_repeat_spell_active = false;
 local _auto_attack_active = false;
@@ -182,19 +197,6 @@ local _ratio;
 
 local _default_width = 200;
 local _default_height = 5;
-
-local _default_db = {
-	[IS_SLAM_MARKER_SHOWN] = false;
-	[IS_ADDON_ACTIVATED] = false;
-	[IS_ADDON_LOCKED] = true;
-	[RANK_IMP_SLAM] = 0;
-	[POSITION_POINT] = "CENTER";
-	[POSITION_X] = 0;
-	[POSITION_Y] = -120;
-	[ACTIVE_ALPHA] = 1;
-	[INACTIVE_ALPHA] = 0.3;
-	[DB_VERSION] = 2;
-};
 
 ----------------------------------------------------------------
 -- PRIVATE FUNCTIONS -------------------------------------------
@@ -250,10 +252,10 @@ end
 
 local _updateSlamMarker = function()
 	
-	if (_slam_marker) then
+	if (_marker) then
 	
-		_slam_marker:SetWidth( (_default_width / _total_swing_time) * (_SLAM_CAST_TIME - (_db[RANK_IMP_SLAM] / _SLAM_TOTAL_RANKS_IMP_SLAM * _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION) ) );
-		
+		_marker:SetWidth( (_default_width / _total_swing_time) * _db[MARKER_SIZE] );
+
 	end
 
 end
@@ -292,26 +294,33 @@ end
 
 --------
 
-local _setImpSlamRank = function(rank)
+local _setMarkerSize = function(time_in_seconds)
 
 	-- Stop arsin about!
-	if rank == _db[RANK_IMP_SLAM] then return end;
+	if time_in_seconds == _db[MARKER_SIZE] then return end;
 
-	rank = tonumber(rank);
+	time_in_seconds = tonumber(time_in_seconds);
 
-	if 	rank < 0
-	or 	rank > _SLAM_TOTAL_RANKS_IMP_SLAM then
+	if not time_in_seconds then
+
+		_report("setMarkerSize expects", "a number in seconds");
+		return;
+
+	end
+
+	if time_in_seconds < 0 then
 	
-		error("Usage: _setImpSlamRank(rank <number> [0-" .. _SLAM_TOTAL_RANKS_IMP_SLAM .. "])");
+		_report("setMarkerSize expects", "time in seconds to be 0 or more");
+		return;
 	
 	end
 	
 	-- Update local database
-	_db[RANK_IMP_SLAM] = rank;
+	_db[MARKER_SIZE] = time_in_seconds;
 	
-	_report("Saved Improved Slam rank", _db[RANK_IMP_SLAM]);
+	_report("Saved marker size to", _db[MARKER_SIZE]);
 	
-	-- Slam marker is dependant on rank so update it now.
+	-- Marker is dependant on time_in_seconds so update it now.
 	_updateSlamMarker();
 
 end
@@ -398,7 +407,7 @@ local _removeEvent = function(event_name)
 	
 	if eventHandler then
 	
-		-- GC should pick this up.
+		-- GC should pick this up when a new assignment happens
 		_event_handlers[event_name] = nil;
 	
 	end
@@ -408,7 +417,7 @@ local _removeEvent = function(event_name)
 end
 
 --------
-
+-- #TODO: This looks an awefull lot like a class... again.
 local _addSlashCommand = function(name, command, command_description, db_property)
 
 	-- prt("Adding a slash command");
@@ -636,51 +645,51 @@ end
 
 --------
 
-local _hideSlamMarker = function()
+local _hideMarker = function()
 
-	_db[IS_SLAM_MARKER_SHOWN] = false;
+	_db[IS_MARKER_SHOWN] = false;
 	
 	-- Addon could be inactive or some other reason
 	-- we don't actually have the frame on hand.
-	if (_slam_marker) then
+	if (_marker) then
 	
-		_slam_marker:Hide();
+		_marker:Hide();
 		
 	end
 	
-	_report("Slam marker is", "Hidden");
+	_report("Marker is", "Hidden");
 
 end
 
 --------
 
-local _showSlamMarker = function()
+local _showMarker = function()
 
-	_db[IS_SLAM_MARKER_SHOWN] = true;
+	_db[IS_MARKER_SHOWN] = true;
 
 	-- Addon could be inactive or some other reason
 	-- we don't actually have the frame on hand.
-	if (_slam_marker) then
+	if (_marker) then
 	
-		_slam_marker:Show();
+		_marker:Show();
 		
 	end
 	
-	_report("Slam marker is", "Shown");
+	_report("Marker is", "Shown");
 	
 end
 
 --------
 
-local _toggleSlamMarkerVisibility = function()
+local _toggleMarkerVisibility = function()
 
-	if _db[IS_SLAM_MARKER_SHOWN] then
+	if _db[IS_MARKER_SHOWN] then
 		
-		_hideSlamMarker();
+		_hideMarker();
 		
 	else
 	
-		_showSlamMarker();
+		_showMarker();
 		
 	end
 
@@ -688,41 +697,41 @@ end
 
 --------
 
-local _createSlamMarker = function()
+local _createMarker = function()
 	
 	-- We already made one, no use in making another.
-	if _slam_marker then
+	if _marker then
 	
 		return;
 	
 	end
 	
-	_slam_marker = CreateFrame("FRAME", nil, this);
+	_marker = CreateFrame("FRAME", nil, this);
 	
-	_slam_marker:SetBackdrop(
+	_marker:SetBackdrop(
 		{
 			["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"
 		}
 	);
-	_slam_marker:SetBackdropColor(1, 0, 0, 0.7);
+	_marker:SetBackdropColor(1, 0, 0, 0.7);
 	
-	_slam_marker:SetPoint("RIGHT", 0, 0);
+	_marker:SetPoint("RIGHT", 0, 0);
 	
-	_slam_marker:SetHeight(_default_height);
+	_marker:SetHeight(_default_height);
 	
 	if (_progress_bar) then
 		-- Making sure slam marker is visually on top of the progress bar.		
-		_slam_marker:SetFrameLevel(_progress_bar:GetFrameLevel()+1);
+		_marker:SetFrameLevel(_progress_bar:GetFrameLevel()+1);
 		
 	end
 	
-	if _db[IS_SLAM_MARKER_SHOWN] then
+	if _db[IS_MARKER_SHOWN] then
 	
-		_slam_marker:Show();
+		_marker:Show();
 		
 	else
 	
-		_slam_marker:Hide();
+		_marker:Hide();
 		
 	end
 	
@@ -811,7 +820,7 @@ end
 
 --------
 
-local _lock_addon = function()
+local _lockAddon = function()
 	
 	-- Stop the frame from being movable
 	this:SetMovable(false);
@@ -842,7 +851,7 @@ local _toggleLockToScreen = function()
 	-- Inversed logic to lock the addon if _db[IS_ADDON_LOCKED] returns 'nil' for some reason.
 	if not _db[IS_ADDON_LOCKED] then
 	
-		_lock_addon();
+		_lockAddon();
 	
 	else
 	
@@ -872,12 +881,6 @@ local _populateRequiredEvents = function()
 	_addEvent("STOP_AUTOREPEAT_SPELL", _deactivateAutoRepeatSpell);
 	
 	_addEvent("PLAYER_LOGIN", _finishInitialisation);
-	
-	if UnitClass("player") == "warrior" then
-	
-		_addEvent("CHARACTER_POINTS_CHANGED", _validatePlayerTalents);
-		
-	end
 
 end
 
@@ -902,7 +905,7 @@ local _constructAddon = function()
 	
 	-- CREATE CHILDREN
 	_createProgressBar();
-	_createSlamMarker();
+	_createMarker();
 		
 	_resetSwingTimer();
 	_resetVisibility();
@@ -1056,29 +1059,29 @@ end
 
 --------
 
-local _resetSlashCommands = function()
+local _populateSlashCommandList = function()
 
 	-- For now we just reset this thing.
 	_command_list = {};
 	
 	_addSlashCommand(
-		"impSlam",
-		_setImpSlamRank,
-		'[|cffffff330|r-|cffffff33' .. _SLAM_TOTAL_RANKS_IMP_SLAM .. '|r] |cff999999-- Set your current rank of the "Improved Slam" talent.|r',
-		RANK_IMP_SLAM
+		"setMarkerSize",
+		_setMarkerSize,
+		'[|cffffff330+|r] |cff999999-- Set the amount of seconds of your swing time the marker should cover.|r',
+		MARKER_SIZE
 	);
 	
 	_addSlashCommand(
-		"showSlamMarker",
-		_toggleSlamMarkerVisibility,
-		'<|cff9999fftoggle|r> |cff999999-- Toggle whether the red slam marker is showing.|r',
-		IS_SLAM_MARKER_SHOWN
+		"showMarker",
+		_toggleMarkerVisibility,
+		'<|cff9999fftoggle|r> |cff999999-- Toggle whether the red marker is showing.|r',
+		IS_MARKER_SHOWN
 	);
 		
 	_addSlashCommand(
 		"lock",
 		_toggleLockToScreen,
-		'<|cff9999fftoggle|r> |cff999999-- Toggle whether the bar is movable.|r',
+		'<|cff9999fftoggle|r> |cff999999-- Toggle whether the bar is locked to the screen.|r',
 		IS_ADDON_LOCKED
 	);
 		
@@ -1102,7 +1105,7 @@ local _initialise = function()
 	
 	_event_handlers = {};
 	
-	_resetSlashCommands();
+	_populateSlashCommandList();
 	
 	this:SetScript(SCRIPTHANDLER_ON_EVENT, _eventCoordinator);
 	
