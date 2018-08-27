@@ -12,7 +12,7 @@ for options type /sam or /samuel
 
 -- INSTALLATION --
 
-1. Download all the files inside the Samuel folder and remember the location. (Desktop will work)
+1. Download all the files (Or at least the .lua and .toc files) and remember the location. (Desktop will work)
 2. Create a new folder called "Samuel" inside the /Interface/AddOns/ folder of your client.
 3. Put all the files from step 1 inside the /Interface/AddOns/Samuel folder
 4. Load up the client and check for the addon.
