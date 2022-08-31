@@ -25,3 +25,4 @@ jobs:
         with:
           artifacts: "Samuel.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
+          tag: 'latest'
