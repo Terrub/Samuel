@@ -7,6 +7,15 @@ Two bars are currently present.
  - The top bar represents the melee swing timer
  - The bottom bar represents the ranged swing timer
 
+### INSTALLATION
+
+#### From here on github:
+ - On the right of the github page, under the header 'Releases', click the "tags" button
+ - Click the tag called: "latest"
+ - Under the header 'Assets' click and download the file: `Samuel.zip`
+ - Opening the Samuel.zip archive should show a single folder called `Samuel`
+ - Copy that folder inside the /Interface/AddOns/ folder of your client.
+
 ### SLASH COMMANDS
  - `/sam [command] [parameters]`
  - `/samuel [command] [parameters]`
@@ -20,12 +29,3 @@ Two bars are currently present.
  - `activate` -- Toggle whether the AddOn itself is active
  - `setBarWidth [0+]` -- Set the width of the bar
  - `setBarHeight [0+]` -- Set the height of the bar
-
-### INSTALLATION
-
-#### From here on github:
- - On the right of the github page, under the header 'Releases', click the "tags" button
- - Click the tag called: "latest"
- - Under the header 'Assets' click and download the file: `Samuel.zip`
- - Opening the Samuel.zip archive should show a single folder called `Samuel`
- - Copy that folder inside the /Interface/AddOns/ folder of your client.
