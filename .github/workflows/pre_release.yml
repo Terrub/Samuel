@@ -16,13 +16,14 @@ jobs:
       - name: Archive Release
         uses: thedoctor0/zip-release@master
         with:
-          path: 'Samuel/*'
-          type: 'zip'
-          filename: 'Samuel.zip'
-      
-      - name: Upload Release
-        uses: ncipollo/release-action@v1
+          path: "Samuel/*"
+          type: "zip"
+          filename: "Samuel.zip"
+      - uses: "marvinpinto/action-automatic-releases@latest"
         with:
-          artifacts: "Samuel.zip"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: 'latest'
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Latest build (unstable)"
+          files: |
+            Samuel.zip
