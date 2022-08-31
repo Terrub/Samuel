@@ -24,4 +24,4 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           artifacts: "Samuel.zip"
-          toke: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
