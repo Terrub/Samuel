@@ -13,16 +13,17 @@ jobs:
 
     steps:
       # ...
-      - name: "Build & test"
-        run: |
+      #- name: "Build & test"
+        #run: |
           # zip Samuel.zip Samuel.lua Samuel.toc
-          ls -la
+          #ls -la
 
-      #- uses: "marvinpinto/action-automatic-releases@latest"
-        #with:
-          #repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          #automatic_release_tag: "latest"
-          #prerelease: true
-          #title: "Latest Build (unstable)"
-          #files: |
-            #Samuel.zip
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Latest Build (unstable)"
+          files: |
+            Samuel.lua
+            Samuel.toc
