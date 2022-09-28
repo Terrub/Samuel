@@ -1,15 +1,49 @@
+--[[
+    SAMUEL SWING TIMERS:
+
+    Scenario's we need to take into account:
+
+    Player enters the world with a single 2-handed weapon
+    Player enters the world with a single 1-handed (and a shield)
+    Player enters the world with two 1-handed weapons
+    Player starts combat (regen disabled event) with sam active:
+    -   Show parent frame 
+    Player enables auto attack (combat starts event)
+    -   Capture current time for all three timers
+        -   This should start filling up the bars as they should
+        ?   Test if we start autoattack out of range and both bars are filled up
+            whether both MH and OH hit at the same time or if there's a delay
+            for the OH and if so how long that delay is.
+    Player swaps out off-hand weapon mid swing (1h/1h -> 1h/Sh)
+    Player swaps in off-hand weapon mid swing (1h/Sh -> 1h/1h)
+    Player swaps main-hand weapon with 2-handed (1h/1h -> 2h or 1h/Sh -> 2h)
+    Player swap 2-handed with main-hand weapon (2h -> 1h/1h or 2h -> 1h/Sh)
+    Player hits target with main-hand weapon
+    Player hits target with off-hand weapon
+    Player misses target with main-hand weapon
+    Player misses target with off-hand weapon
+    Player parries opponent's attack
+
+    Addon receives update event
+    -   Update current progress on main-hand weapon
+    -   Check if off-hand is equipped
+        -   Check if off-hand should be shown (_db)
+            *   Update current progress on off-hand weapon
+
+]]
 ----------------------------------------------------------------
 -- "UP VALUES" FOR SPEED ---------------------------------------
 ----------------------------------------------------------------
 
-local _mathMin = math.min
-local _stringFind = string.find
-local _tableInsert = table.insert
-local _tableRemove = table.remove
-local _tostring = tostring
-local _type = type
-local _error = error
-local _pairs = pairs
+local mathMin = math.min
+local mathMax = math.max
+local stringFind = string.find
+local tableInsert = table.insert
+local tableRemove = table.remove
+local tostring = tostring
+local type = type
+local error = error
+local pairs = pairs
 
 ----------------------------------------------------------------
 -- CONSTANTS THAT SHOULD BE GLOBAL PROBABLY --------------------
@@ -30,20 +64,20 @@ local SCRIPTHANDLER_ON_DRAG_STOP = "OnDragStop"
 
 --  These should be moved into the core at one point.
 
-local merge = function(left, right)
+local function merge(left, right)
     local t = {}
 
-    if _type(left) ~= "table" or _type(right) ~= "table" then
-        _error("Usage: merge(left <table>, right <table>)")
+    if type(left) ~= "table" or type(right) ~= "table" then
+        error("Usage: merge(left <table>, right <table>)")
     end
 
     -- copy left into temp table.
-    for k, v in _pairs(left) do
+    for k, v in pairs(left) do
         t[k] = v
     end
 
     -- Add or overwrite right values.
-    for k, v in _pairs(right) do
+    for k, v in pairs(right) do
         t[k] = v
     end
 
@@ -52,15 +86,15 @@ end
 
 --------
 
-local toColourisedString = function(value)
+local function toColourisedString(value)
     local val
 
-    if _type(value) == "string" then
+    if type(value) == "string" then
         val = "|cffffffff" .. value .. "|r"
-    elseif _type(value) == "number" then
-        val = "|cffffff33" .. _tostring(value) .. "|r"
-    elseif _type(value) == "boolean" then
-        val = "|cff9999ff" .. _tostring(value) .. "|r"
+    elseif type(value) == "number" then
+        val = "|cffffff33" .. tostring(value) .. "|r"
+    elseif type(value) == "boolean" then
+        val = "|cff9999ff" .. tostring(value) .. "|r"
     end
 
     return val
@@ -68,10 +102,10 @@ end
 
 --------
 
-local prt = function(message)
+local function prt(message)
     if (message and message ~= "") then
-        if _type(message) ~= "string" then
-            message = _tostring(message)
+        if type(message) ~= "string" then
+            message = tostring(message)
         end
 
         DEFAULT_CHAT_FRAME:AddMessage(message)
@@ -92,9 +126,9 @@ local this = Samuel
 -- INTERNAL CONSTANTS ------------------------------------------
 ----------------------------------------------------------------
 
-local _SLAM_CAST_TIME = 1.5
-local _SLAM_TOTAL_RANKS_IMP_SLAM = 5
-local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5
+local SLAM_CAST_TIME = 1.5
+local SLAM_TOTAL_RANKS_IMP_SLAM = 5
+local SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5
 
 ----------------------------------------------------------------
 -- DATABASE KEYS -----------------------------------------------
@@ -109,7 +143,7 @@ local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5
 
 -- #TODO:   Make these version specific, allowing full
 --          backwards-compatibility. Though doing so manually
---          is very _error prone. Not sure how to do this auto-
+--          is very error prone. Not sure how to do this auto-
 --          matically. Yet.
 --
 --          Consider doing something like a property list.
@@ -117,11 +151,16 @@ local _SLAM_TOTAL_IMP_SLAM_CAST_REDUCTION = 0.5
 --          perhaps an in-game editor, we can change the version
 --          and keep a record per version.
 
-local IS_MARKER_SHOWN = "is_marker_shown"
+local IS_MH_MARKER_SHOWN = "is_mh_marker_shown"
+local IS_OH_MARKER_SHOWN = "is_oh_marker_shown"
 local IS_RANGED_MARKER_SHOWN = "is_ranged_marker_shown"
+local MH_BAR_SHOWN = "main_hand_bar_shown"
+local OH_BAR_SHOWN = "off_hand_bar_shown"
+local RANGED_BAR_SHOWN = "ranged_bar_shown"
 local IS_ADDON_ACTIVATED = "is_addon_activated"
 local IS_ADDON_LOCKED = "is_addon_locked"
-local MARKER_SIZE = "marker_size"
+local MH_MARKER_SIZE = "main_hand_marker_size"
+local OH_MARKER_SIZE = "off_hand_marker_size"
 local RANGED_MARKER_SIZE = "ranged_marker_size"
 local POSITION_POINT = "position_point"
 local POSITION_X = "position_x"
@@ -131,72 +170,96 @@ local INACTIVE_ALPHA = "inactive_alpha"
 local DB_VERSION = "db_version"
 local WIDTH = "WIDTH"
 local HEIGHT = "HEIGHT"
+local IS_DEBUGGING = "is_debugging"
 
-local _default_db = {
-    [IS_MARKER_SHOWN] = false,
+local _defaultDB = {
+    [IS_MH_MARKER_SHOWN] = false,
+    [IS_OH_MARKER_SHOWN] = false,
     [IS_RANGED_MARKER_SHOWN] = false,
     [IS_ADDON_ACTIVATED] = false,
     [IS_ADDON_LOCKED] = true,
-    [MARKER_SIZE] = 1.5,
-    [RANGED_MARKER_SIZE] = 1.5,
+    [MH_BAR_SHOWN] = true,
+    [OH_BAR_SHOWN] = true,
+    [RANGED_BAR_SHOWN] = true,
+    [MH_MARKER_SIZE] = 1.5,
+    [OH_MARKER_SIZE] = 1,
+    [RANGED_MARKER_SIZE] = 0.8,
     [POSITION_POINT] = "CENTER",
     [POSITION_X] = 0,
     [POSITION_Y] = -120,
     [ACTIVE_ALPHA] = 1,
     [INACTIVE_ALPHA] = 0.3,
-    [DB_VERSION] = 6,
+    [DB_VERSION] = 8,
     [WIDTH] = 200,
-    [HEIGHT] = 8
+    [HEIGHT] = 8,
+    [IS_DEBUGGING] = false,
 }
 
 ----------------------------------------------------------------
 -- PRIVATE VARIABLES -------------------------------------------
 ----------------------------------------------------------------
 
-local _initialisation_event = "ADDON_LOADED"
+local initialisationEvent = "ADDON_LOADED"
 
-local _progress_bar
-local _marker
-local _ranged_progress_bar
-local _ranged_marker
-
-local _auto_repeat_spell_active = false
-local _auto_attack_active = false
-
-local _updateRunTime = 0
-local _fps = 30
-local _update_display_timer = (1 / _fps)
-local _last_update = GetTime()
-
-local _proposed_swing_time = 1
-local _current_swing_time = 0
-local _total_swing_time = 1
-
-local _proposed_ranged_time = 1
-local _current_ranged_time = 0
-local _total_ranged_time = 1
-
-local _unit_name
-local _realm_name
-local _profile_id
 local _db
 
-local _swing_reset_actions
-local _event_handlers
-local _command_list
+local unitName
+local realmName
+local profileId
 
-local _last_swing
-local _last_shot
-local _ratio
-local _ranged_ratio
+local mainHandBackground
+local mainHandProgressBar
+local mainHandMarker
+local offHandBackground
+local offHandProgressBar
+local offHandMarker
+local rangedBackground
+local rangedProgressBar
+local rangedMarker
+
+local autoRepeatSpellActive = false
+local autoAttackActive = false
+
+local updateRunTime = 0
+local fps = 30
+local secondsPerFrame = (1 / fps)
+local lastUpdate = GetTime()
+local elapsed
+
+local proposedMHSwingTime = 1
+local currentMHSwingTime = 0
+local totalMHSwingTime = 1
+
+local proposedOHSwingTime = 1
+local currentOHSwingTime = 0
+local totalOHSwingTime = 1
+
+local proposedRangedTime = 1
+local currentRangedTime = 0
+local totalRangedTime = 1
+
+local swingResetActions
+local eventHandlers
+local commandList
+
+local lastMHSwing
+local lastOHSwing
+local lastShot
+local mhCleanHit
+local ohCleanHit
+local mainHandRatio
+local offHandRatio
+local rangedRatio
+
+local isDebugging = false
 
 ----------------------------------------------------------------
 -- PRIVATE FUNCTIONS -------------------------------------------
 ----------------------------------------------------------------
 
-local _report = function(label, message)
-    label = _tostring(label)
-    message = _tostring(message)
+local function report(label, message)
+    label = tostring(label)
+    message = tostring(message)
 
     local str = "|cff22ff22Samuel|r - |cff999999" .. label .. ":|r " .. message
 
@@ -205,117 +268,197 @@ end
 
 --------
 
-local _deactivateSwingTimer = function()
+local function debugLog(message)
+    if _db[IS_DEBUGGING] then
+        report("DEBUG", message)
+    end
+end
+
+--------
+
+local function updateMainHandMarker()
+    if mainHandMarker and totalMHSwingTime then
+        mainHandMarker:SetWidth((_db[WIDTH] / totalMHSwingTime) * _db[MH_MARKER_SIZE])
+    end
+end
+
+--------
+
+local function updateOffHandMarker()
+    if offHandMarker and totalOHSwingTime then
+        offHandMarker:SetWidth((_db[WIDTH] / totalOHSwingTime) * _db[OH_MARKER_SIZE])
+    end
+end
+
+--------
+
+local function updateRangedMarker()
+    if rangedMarker and totalRangedTime then
+        rangedMarker:SetWidth((_db[WIDTH] / totalRangedTime) * _db[RANGED_MARKER_SIZE])
+    end
+end
+
+--------
+
+local function resetMainHandSwingTimer()
+    lastMHSwing = GetTime()
+    currentMHSwingTime = 0
+    totalMHSwingTime = proposedMHSwingTime
+    updateMainHandMarker()
+end
+
+--------
+
+local function resetOffHandSwingTimer()
+    lastOHSwing = GetTime()
+    currentOHSwingTime = 0
+    totalOHSwingTime = proposedOHSwingTime
+    updateOffHandMarker()
+end
+
+--------
+
+local function resetRangedSwingTimer()
+    lastShot = GetTime()
+    currentRangedTime = 0
+    totalRangedTime = proposedRangedTime
+    updateRangedMarker()
+end
+
+--------
+
+local function hideSwingTimers()
     this:Hide()
+    mainHandRatio = 0
+    offHandRatio = 0
 end
 
 --------
 
-local _activateSwingTimer = function()
+local function showSwingTimers()
+    resetMainHandSwingTimer()
+    resetOffHandSwingTimer()
     this:Show()
-    _last_update = GetTime()
+    lastUpdate = GetTime()
 end
 
 --------
 
-local _resetVisibility = function()
-    -- Turn on if player is in combat
-    if UnitAffectingCombat("player") or (_db[IS_ADDON_LOCKED] == false) then
-        _activateSwingTimer()
+local function resetSwingTimer()
+    if not proposedOHSwingTime or not totalOHSwingTime then
+        resetMainHandSwingTimer()
+        return
+    end
+
+    local mhDelta = currentMHSwingTime - totalMHSwingTime
+    if math.abs(mhDelta) <= 0.1 then
+        debugLog("Main hand clean hit")
+        mhCleanHit = true
+        resetMainHandSwingTimer()
+        return
+    end
+    debugLog("currentOHSwingTime: "..currentOHSwingTime)
+    debugLog("totalOHSwingTime: "..totalOHSwingTime)
+    local ohDelta = currentOHSwingTime - totalOHSwingTime
+    if math.abs(ohDelta) <= 0.1 then
+        debugLog("Off hand clean hit")
+        ohCleanHit = true
+        resetOffHandSwingTimer()
+        return
+    end
+
+    if mhCleanHit and mhDelta < 0.1 then
+        debugLog("Off hand dirty hit")
+        resetOffHandSwingTimer()
+        ohCleanHit = false
+        return
+    end
+
+    if ohCleanHit and ohDelta < 0.1 then
+        debugLog("Main hand dirty hit")
+        resetMainHandSwingTimer()
+        mhCleanHit = false
+        return
+    end
+
+    if mhDelta >= ohDelta then
+        resetMainHandSwingTimer()
+        mhCleanHit = false
+        debugLog("No clear hit detection, resetting highest delta: mainHand")
     else
-        _deactivateSwingTimer()
+        resetOffHandSwingTimer()
+        ohCleanHit = false
+        debugLog("No clear hit detection, resetting highest delta: offHand")
     end
 end
 
 --------
 
-local _updateSlamMarker = function()
-    if (_marker) then
-        _marker:SetWidth((_db[WIDTH] / _total_swing_time) * _db[MARKER_SIZE])
+local function applyParryHaste(combatLogStr)
+    if stringFind(combatLogStr, "parry") then
+        totalMHSwingTime = proposedMHSwingTime * 0.4
     end
 end
 
 --------
 
-local _updateRangedMarker = function()
-    if (_ranged_marker) then
-        _ranged_marker:SetWidth((_db[WIDTH] / _total_ranged_time) * _db[RANGED_MARKER_SIZE])
+local function resetSwingTimerOnSpellDamage(combatLogStr)
+    if (not combatLogStr) or (combatLogStr == "") then
+        error("Usage: resetSwingTimerOnSpellDamage(combatLogStr <string>)")
     end
-end
+    -- prt(combatLogStr);
+    local _, _, action = stringFind(combatLogStr, EN_GB_PAT_CHAT_MSG_SPELL_SELF_DAMAGE)
 
---------
-
-local _resetSwingTimer = function()
-    _last_swing = GetTime()
-    _total_swing_time = _proposed_swing_time
-    _updateSlamMarker()
-end
-
---------
-
-local _resetRangedTimer = function()
-    _last_shot = GetTime()
-    _total_ranged_time = _proposed_ranged_time
-    _updateRangedMarker()
-end
-
---------
-
-local _applyParryHaste = function(combat_log_str)
-    if _stringFind(combat_log_str, "parry") then
-        _total_swing_time = 0.4 * _proposed_swing_time
-    end
-end
-
---------
-
-local _resetSwingTimerOnSpellDamage = function(combat_log_str)
-    if (not combat_log_str) or (combat_log_str == "") then
-        _error("Usage: _resetSwingTimerOnSpellDamage(combat_log_str <string>)")
-    end
-    -- prt(combat_log_str);
-    local _, _, action = _stringFind(combat_log_str, EN_GB_PAT_CHAT_MSG_SPELL_SELF_DAMAGE)
-
-    if _swing_reset_actions[action] then
-        _resetSwingTimer()
+    if swingResetActions[action] then
+        resetMainHandSwingTimer()
+        mhCleanHit = true
     elseif action == "Auto" then
-        _resetRangedTimer()
+        resetRangedSwingTimer()
     end
 end
 
 --------
 
-local _updateSwingTime = function()
+local function updateSwingTime()
     --http://vanilla-wow.wikia.com/wiki/API_UnitAttackSpeed
-    _proposed_swing_time = UnitAttackSpeed("player")
+    debugLog("updateSwingTime")
+    proposedMHSwingTime, proposedOHSwingTime = UnitAttackSpeed("player")
+    if _db[OH_BAR_SHOWN] then
+        resetOffHandSwingTimer()
+        if not proposedOHSwingTime then
+            offHandBackground:Hide()
+        else
+            offHandBackground:Show()
+        end
+    end
 end
 
 --------
 
-local _updateRangedSwingTime = function()
-    _proposed_ranged_time = UnitRangedDamage("player")
+local function updateRangedSwingTime()
+    proposedRangedTime = UnitRangedDamage("player")
 end
 
 --------
 
-local _activateAutoAttackSymbol = function()
-    if _auto_attack_active or _auto_repeat_spell_active then
+local function activateAutoAttackSymbol()
+    if autoAttackActive or autoRepeatSpellActive then
         this:SetAlpha(_db[ACTIVE_ALPHA])
     end
 end
 
 --------
 
-local _deactivateAutoAttackSymbol = function()
-    if not (_auto_attack_active or _auto_repeat_spell_active) then
+local function deactivateAutoAttackSymbol()
+    if not (autoAttackActive or autoRepeatSpellActive) then
         this:SetAlpha(_db[INACTIVE_ALPHA])
     end
 end
 
 --------
 
-local _populateSwingResetActionsList = function()
-    _swing_reset_actions = {
+local function populateSwingResetActionsList()
+    swingResetActions = {
         ["Heroic"] = true,
         ["Slam"] = true,
         ["Cleave"] = true,
@@ -327,70 +470,71 @@ end
 
 --------
 
-local _addEvent = function(event_name, eventHandler)
-    if (not event_name) or (event_name == "") or (not eventHandler) or (_type(eventHandler) ~= "function") then
-        _error("Usage: _addEvent(event_name <string>, eventHandler <function>)")
+local function addEvent(eventName, eventHandler)
+    if (not eventName) or (eventName == "") or (not eventHandler) or (type(eventHandler) ~= "function") then
+        error("Usage: addEvent(eventName <string>, eventHandler <function>)")
     end
 
-    _event_handlers[event_name] = eventHandler
-    this:RegisterEvent(event_name)
+    eventHandlers[eventName] = eventHandler
+    this:RegisterEvent(eventName)
 end
 
 --------
 
-local _removeEvent = function(event_name)
-    local eventHandler = _event_handlers[event_name]
+local function removeEvent(eventName)
+    local eventHandler = eventHandlers[eventName]
     if eventHandler then
         -- GC should pick this up when a new assignment happens
-        _event_handlers[event_name] = nil
+        eventHandlers[eventName] = nil
     end
 
-    this:UnregisterEvent(event_name)
+    this:UnregisterEvent(eventName)
 end
 
 --------
 
-local _addSlashCommand = function(name, command, command_description, db_property)
+local function addSlashCommand(name, command, commandDescription, dbProperty)
     -- prt("Adding a slash command");
     if
-        (not name) or (name == "") or (not command) or (_type(command) ~= "function") or (not command_description) or
-            (command_description == "")
+        (not name) or (name == "") or (not command) or (type(command) ~= "function") or (not commandDescription) or
+            (commandDescription == "")
      then
-        _error(
-            "Usage: _addSlashCommand(name <string>, command <function>, command_description <string> [, db_property <string>])"
+        error(
+            "Usage: addSlashCommand(name <string>, command <function>, commandDescription <string> [, dbProperty <string>])"
         )
     end
 
     -- prt("Creating a slash command object into the command list");
-    _command_list[name] = {
+    commandList[name] = {
         ["execute"] = command,
-        ["description"] = command_description
+        ["description"] = commandDescription
     }
 
-    if (db_property) then
-        if (_type(db_property) ~= "string" or db_property == "") then
-            _error("db_property must be a non-empty string.")
+    if (dbProperty) then
+        if (type(dbProperty) ~= "string" or dbProperty == "") then
+            error("dbProperty must be a non-empty string.")
         end
 
-        if (_db[db_property] == nil) then
-            _error('The interal database property: "' .. db_property .. '" could not be found.')
+        if (_db[dbProperty] == nil) then
+            error('The internal database property: "' .. dbProperty .. '" could not be found.')
         end
         -- prt("Add the database property to the command list");
-        _command_list[name]["value"] = db_property
+        commandList[name]["value"] = dbProperty
     end
 end
 
 --------
 
-local _finishInitialisation = function()
+local function finishInitialisation()
     -- we only need this once
     this:UnregisterEvent("PLAYER_LOGIN")
-    _updateSwingTime()
+    updateSwingTime()
+    updateRangedSwingTime()
 end
 
 --------
 
-local _storeLocalDatabaseToSavedVariables = function()
+local function storeLocalDatabaseToSavedVariables()
     -- #OPTION: We could have local variables for lots of DB
     --          stuff that we can load into the _db Object
     --          before we store it.
@@ -401,53 +545,49 @@ local _storeLocalDatabaseToSavedVariables = function()
     --          unload never desync.
 
     -- Commit to local storage
-    SamuelDB[_profile_id] = _db
+    SamuelDB[profileId] = _db
 end
 
 --------
 
-local _validatePlayerTalents = function()
-    --_report("CHARACTER_POINTS_CHANGED", arg1);
+local function activateAutoAttack()
+    autoAttackActive = true
+    activateAutoAttackSymbol()
 end
 
 --------
 
-local _activateAutoAttack = function()
-    _auto_attack_active = true
-    _activateAutoAttackSymbol()
+local function deactivateAutoAttack()
+    autoAttackActive = false
+    mhCleanHit = false
+    ohCleanHit = false
+    deactivateAutoAttackSymbol()
 end
 
 --------
 
-local _deactivateAutoAttack = function()
-    _auto_attack_active = false
-    _deactivateAutoAttackSymbol()
+local function activateAutoRepeatSpell()
+    updateRangedSwingTime()
+    autoRepeatSpellActive = true
+    activateAutoAttackSymbol()
 end
 
 --------
 
-local _activateAutoRepeatSpell = function()
-    _updateRangedSwingTime()
-    _auto_repeat_spell_active = true
-    _activateAutoAttackSymbol()
+local function deactivateAutoRepeatSpell()
+    updateSwingTime()
+    autoRepeatSpellActive = false
+    deactivateAutoAttackSymbol()
 end
 
 --------
 
-local _deactivateAutoRepeatSpell = function()
-    _updateSwingTime()
-    _auto_repeat_spell_active = false
-    _deactivateAutoAttackSymbol()
-end
-
---------
-
-local _eventCoordinator = function()
+local function eventCoordinator()
     -- given:
     -- event <string> The event name that triggered.
     -- arg1, arg2, ..., arg9 <*> Given arguments specific to the event.
 
-    local eventHandler = _event_handlers[event]
+    local eventHandler = eventHandlers[event]
 
     if eventHandler then
         eventHandler(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
@@ -456,147 +596,198 @@ end
 
 --------
 
-local _removeEvents = function()
-    for event_name, eventHandler in _pairs(_event_handlers) do
+local function removeEvents()
+    for eventName, eventHandler in pairs(eventHandlers) do
         if eventHandler then
-            _removeEvent(event_name)
+            removeEvent(eventName)
         end
     end
 end
 
 --------
 
-local _updateDisplay = function()
-    local elapsed = GetTime() - _last_update
+local function updateDisplay()
+    elapsed = GetTime() - lastUpdate
 
-    -- elapsed is the total time since last frame update.
-    -- we have to add this to our current running total timer
-    -- to know when to actually do something next frame.
-    _updateRunTime = _updateRunTime + elapsed
-
-    while (_updateRunTime >= _update_display_timer) do
-        _current_swing_time = GetTime() - _last_swing
-        _ratio = _mathMin((_current_swing_time / _total_swing_time), 1)
-        _progress_bar:SetWidth(_ratio * _db[WIDTH])
-
-        _current_ranged_time = GetTime() - _last_shot
-        _ranged_ratio = _mathMin((_current_ranged_time / _total_ranged_time), 1)
-        _ranged_progress_bar:SetWidth(_ranged_ratio * _db[WIDTH])
-
-        _updateRunTime = _updateRunTime - _update_display_timer
-    end
-
-    _last_update = GetTime()
-end
-
---------
-
-local _createProgressBar = function(parent, point, x, y)
-    local progressBar = CreateFrame("FRAME", nil, parent)
-    progressBar:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
-    progressBar:SetBackdropColor(0.7, 0.7, 0.7, 1)
-    progressBar:SetWidth(1)
-    progressBar:SetHeight(_db[HEIGHT])
-    progressBar:SetPoint(point, x, y)
-
-    return progressBar
-end
-
---------
-
-local _hideMarker = function()
-    _db[IS_MARKER_SHOWN] = false
-
-    -- Addon could be inactive or some other reason
-    -- we don't actually have the frame on hand.
-    if (_marker) then
-        _marker:Hide()
-    end
-end
-
---------
-
-local _showMarker = function()
-    _db[IS_MARKER_SHOWN] = true
-
-    -- Addon could be inactive or some other reason
-    -- we don't actually have the frame on hand.
-    if (_marker) then
-        _marker:Show()
-    end
-end
-
---------
-
-local _hideRangedMarker = function()
-    _db[IS_RANGED_MARKER_SHOWN] = false
-
-    -- Addon could be inactive or some other reason
-    -- we don't actually have the frame on hand.
-    if (_ranged_marker) then
-        _ranged_marker:Hide()
-    end
-end
-
---------
-
-local _showRangedMarker = function()
-    _db[IS_RANGED_MARKER_SHOWN] = true
-
-    -- Addon could be inactive or some other reason
-    -- we don't actually have the frame on hand.
-    if (_ranged_marker) then
-        _ranged_marker:Show()
-    end
-end
-
---------
-
-local _createMarker = function(progressBar, point, x, y)
-    if not progressBar then
+    -- Limit updates to intended framerate
+    if elapsed < secondsPerFrame then
         return
     end
-
-    local marker = CreateFrame("FRAME", nil, this)
-
-    marker:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
-    marker:SetBackdropColor(1, 0, 0, 0.7)
-    marker:SetPoint(point, x, y)
-    marker:SetHeight(_db[HEIGHT])
-
-    -- Making sure slam marker is visually on top of the progress bar.
-    marker:SetFrameLevel(progressBar:GetFrameLevel() + 1)
-
-    if _db[IS_MARKER_SHOWN] then
-        _showMarker()
-    else
-        _hideMarker()
+    -- prt(
+    --     string.format(
+    --         "MH showing: %s speed: %f\nOH showing: %s speed: %f\nRA showing: %s speed: %f",
+    --         _db[MH_BAR_SHOWN] and 'true' or 'false',
+    --         totalMHSwingTime,
+    --         _db[OH_BAR_SHOWN] and 'true' or 'false',
+    --         totalOHSwingTime,
+    --         _db[RANGED_BAR_SHOWN] and 'true' or 'false',
+    --         totalRangedTime
+    --     )
+    -- )
+    if totalMHSwingTime and totalMHSwingTime ~= 0 then
+        currentMHSwingTime = GetTime() - lastMHSwing
+        mainHandRatio = (currentMHSwingTime / totalMHSwingTime)
+        mainHandProgressBar:SetWidth(mathMin(mainHandRatio, 1) * _db[WIDTH])
     end
 
-    return marker
+    if totalOHSwingTime and totalOHSwingTime ~= 0 then
+        currentOHSwingTime = GetTime() - lastOHSwing
+        offHandRatio = (currentOHSwingTime / totalOHSwingTime)
+        offHandProgressBar:SetWidth(mathMin(offHandRatio, 1) * _db[WIDTH])
+    end
+
+    if totalRangedTime and totalRangedTime ~= 0 then
+        currentRangedTime = GetTime() - lastShot
+        rangedRatio = mathMin((currentRangedTime / totalRangedTime), 1)
+        rangedProgressBar:SetWidth(rangedRatio * _db[WIDTH])
+    end
+
+    lastUpdate = GetTime()
 end
 
 --------
 
-local _printSlashCommandList = function()
-    _report("Listing", "Slash commands")
+local function hideMainHandMarker()
+    _db[IS_MH_MARKER_SHOWN] = false
+
+    if (mainHandMarker) then
+        mainHandMarker:Hide()
+    end
+end
+
+--------
+
+local function showMainHandMarker()
+    _db[IS_MH_MARKER_SHOWN] = true
+
+    if (mainHandMarker) then
+        mainHandMarker:Show()
+    end
+end
+
+--------
+
+local function hideOffHandMarker()
+    _db[IS_OH_MARKER_SHOWN] = false
+
+    if (offHandMarker) then
+        offHandMarker:Hide()
+    end
+end
+
+--------
+
+local function showOffHandMarker()
+    _db[IS_OH_MARKER_SHOWN] = true
+
+    if (offHandMarker) then
+        offHandMarker:Show()
+    end
+end
+
+--------
+
+local function hideRangedMarker()
+    _db[IS_RANGED_MARKER_SHOWN] = false
+
+    if (rangedMarker) then
+        rangedMarker:Hide()
+    end
+end
+
+--------
+
+local function showRangedMarker()
+    _db[IS_RANGED_MARKER_SHOWN] = true
+
+    if (rangedMarker) then
+        rangedMarker:Show()
+    end
+end
+
+--------
+
+local function hideOHBar()
+    _db[OH_BAR_SHOWN] = false
+
+    if (offHandBackground) then
+        offHandBackground:Hide()
+    end
+end
+
+--------
+
+local function showOHBar()
+    _db[OH_BAR_SHOWN] = true
+
+    if (offHandBackground) then
+        offHandBackground:Show()
+    end
+end
+
+--------
+
+local function hideRangedBar()
+    _db[RANGED_BAR_SHOWN] = false
+
+    if (rangedBackground) then
+        rangedBackground:Hide()
+    end
+end
+
+--------
+
+local function showRangedBar()
+    _db[RANGED_BAR_SHOWN] = true
+
+    if (rangedBackground) then
+        rangedBackground:Show()
+    end
+end
+
+--------
+
+local function resetVisibility()
+    if _db[OH_BAR_SHOWN] then
+        showOHBar()
+    else
+        hideOHBar()
+    end
+
+    if _db[RANGED_BAR_SHOWN] then
+        showRangedBar()
+    else
+        hideRangedBar()
+    end
+
+    -- Turn on if player is in combat
+    if UnitAffectingCombat("player") or (_db[IS_ADDON_LOCKED] == false) then
+        showSwingTimers()
+    else
+        hideSwingTimers()
+    end
+end
+
+--------
+
+local function printSlashCommandList()
+    report("Listing", "Slash commands")
 
     local str
     local description
-    local current_value
 
-    for name, cmd_object in _pairs(_command_list) do
-        description = cmd_object.description
+    for name, cmdObject in pairs(commandList) do
+        description = cmdObject.description
 
         if (not description) then
-            _error('Attempt to print slash command with name:"' .. name .. '" without valid description')
+            error('Attempt to print slash command with name:"' .. name .. '" without valid description')
         end
 
         str = "/sam " .. name .. " " .. description
 
         -- If the slash command sets a value we should have
-        if (cmd_object.value) then
-            str = str .. " (|cff666666Currently:|r " .. toColourisedString(_db[cmd_object.value]) .. ")"
+        if (cmdObject.value) then
+            str = str .. " (|cff666666Currently:|r " .. toColourisedString(_db[cmdObject.value]) .. ")"
         end
 
         prt(str)
@@ -605,38 +796,38 @@ end
 
 --------
 
-local _startMoving = function()
+local function startMoving()
     this:StartMoving()
 end
 
 --------
 
-local _stopMovingOrSizing = function()
+local function stopMovingOrSizing()
     this:StopMovingOrSizing()
     _db[POSITION_POINT], _, _, _db[POSITION_X], _db[POSITION_Y] = this:GetPoint()
 end
 
 --------
 
-local _unlockAddon = function()
+local function unlockAddon()
     -- Make the left mouse button trigger drag events
     this:RegisterForDrag("LeftButton")
     -- Set the start and stop moving events on triggered events
-    this:SetScript(SCRIPTHANDLER_ON_DRAG_START, _startMoving)
-    this:SetScript(SCRIPTHANDLER_ON_DRAG_STOP, _stopMovingOrSizing)
+    this:SetScript(SCRIPTHANDLER_ON_DRAG_START, startMoving)
+    this:SetScript(SCRIPTHANDLER_ON_DRAG_STOP, stopMovingOrSizing)
     -- Make the frame react to the mouse
     this:EnableMouse(true)
     -- Make the frame movable
     this:SetMovable(true)
     -- Show ourselves so we can be moved
-    _activateSwingTimer()
+    showSwingTimers()
 
     _db[IS_ADDON_LOCKED] = false
 end
 
 --------
 
-local _lockAddon = function()
+local function lockAddon()
     -- Stop the frame from being movable
     this:SetMovable(false)
     -- Remove all buttons from triggering drag events
@@ -647,161 +838,303 @@ local _lockAddon = function()
     -- Disable mouse interactivity on the frame
     this:EnableMouse(false)
     -- reset our visibility
-    _deactivateSwingTimer()
+    hideSwingTimers()
 
     _db[IS_ADDON_LOCKED] = true
 end
 
 --------
 
-local _populateRequiredEvents = function()
-    _addEvent("CHAT_MSG_COMBAT_SELF_HITS", _resetSwingTimer)
-    _addEvent("CHAT_MSG_COMBAT_SELF_MISSES", _resetSwingTimer)
-    _addEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES", _applyParryHaste)
-    _addEvent("CHAT_MSG_SPELL_SELF_DAMAGE", _resetSwingTimerOnSpellDamage)
+local function populateRequiredEvents()
+    addEvent("CHAT_MSG_COMBAT_SELF_HITS", resetSwingTimer)
+    addEvent("CHAT_MSG_COMBAT_SELF_MISSES", resetSwingTimer)
+    addEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES", applyParryHaste)
+    addEvent("CHAT_MSG_SPELL_SELF_DAMAGE", resetSwingTimerOnSpellDamage)
 
-    _addEvent("UNIT_ATTACK_SPEED", _updateSwingTime)
+    addEvent("UNIT_INVENTORY_CHANGED", updateSwingTime)
+    addEvent("UNIT_ATTACK_SPEED", updateSwingTime)
 
-    _addEvent("PLAYER_REGEN_DISABLED", _activateSwingTimer)
-    _addEvent("PLAYER_REGEN_ENABLED", _deactivateSwingTimer)
+    addEvent("PLAYER_REGEN_DISABLED", showSwingTimers)
+    addEvent("PLAYER_REGEN_ENABLED", hideSwingTimers)
 
-    _addEvent("PLAYER_ENTER_COMBAT", _activateAutoAttack)
-    _addEvent("PLAYER_LEAVE_COMBAT", _deactivateAutoAttack)
+    addEvent("PLAYER_ENTER_COMBAT", activateAutoAttack)
+    addEvent("PLAYER_LEAVE_COMBAT", deactivateAutoAttack)
 
-    _addEvent("START_AUTOREPEAT_SPELL", _activateAutoRepeatSpell)
-    _addEvent("STOP_AUTOREPEAT_SPELL", _deactivateAutoRepeatSpell)
+    addEvent("START_AUTOREPEAT_SPELL", activateAutoRepeatSpell)
+    addEvent("STOP_AUTOREPEAT_SPELL", deactivateAutoRepeatSpell)
 
-    _addEvent("PLAYER_LOGIN", _finishInitialisation)
+    addEvent("PLAYER_LOGIN", finishInitialisation)
 end
 
 --------
 
-local _constructAddon = function()
+local function createMainHandProgressBar(parent)
+    -- Don't bother recreating existing progress bar
+    if mainHandProgressBar then
+        return
+    end
+
+    mainHandBackground = CreateFrame("FRAME", nil, parent)
+    mainHandBackground:SetPoint("TOPLEFT", parent, "TOPLEFT", 1, -1)
+    mainHandBackground:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    mainHandBackground:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    mainHandBackground:SetFrameLevel(10)
+    mainHandBackground:SetWidth(_db[WIDTH])
+    mainHandBackground:SetHeight(_db[HEIGHT])
+
+    mainHandProgressBar = CreateFrame("FRAME", nil, mainHandBackground)
+    mainHandProgressBar:SetPoint("TOPLEFT", mainHandBackground, "TOPLEFT", 0, 0)
+    mainHandProgressBar:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    mainHandProgressBar:SetBackdropColor(0.78, 0.61, 0.43, 1)
+    mainHandProgressBar:SetFrameLevel(11)
+    mainHandProgressBar:SetHeight(_db[HEIGHT])
+    mainHandProgressBar:SetWidth(1)
+
+    -- mainHandBackground:Hide()
+end
+
+--------
+
+local function createOffHandProgressBar(parent)
+    -- Don't bother recreating existing progress bar
+    if offHandProgressBar then
+        return
+    end
+
+    offHandBackground = CreateFrame("FRAME", nil, parent)
+    offHandBackground:SetPoint("TOPLEFT", parent, "TOPLEFT", 1, -(_db[HEIGHT] + 2))
+    offHandBackground:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    offHandBackground:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    offHandBackground:SetFrameLevel(10)
+    offHandBackground:SetWidth(_db[WIDTH])
+    offHandBackground:SetHeight(_db[HEIGHT])
+
+    offHandProgressBar = CreateFrame("FRAME", nil, offHandBackground)
+    offHandProgressBar:SetPoint("TOPLEFT", offHandBackground, "TOPLEFT", 0, 0)
+    offHandProgressBar:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    offHandProgressBar:SetBackdropColor(1.00, 0.96, 0.41, 1)
+    offHandProgressBar:SetFrameLevel(11)
+    offHandProgressBar:SetHeight(_db[HEIGHT])
+    offHandProgressBar:SetWidth(1)
+
+    -- offHandBackground:Hide()
+end
+
+--------
+
+local function createRangedProgressBar(parent)
+    -- Don't bother recreating existing progress bar
+    if rangedProgressBar then
+        return
+    end
+
+    rangedBackground = CreateFrame("FRAME", nil, parent)
+    rangedBackground:SetPoint("TOPLEFT", parent, "TOPLEFT", 1, -(_db[HEIGHT] * 2 + 3))
+    rangedBackground:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    rangedBackground:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    rangedBackground:SetFrameLevel(10)
+    rangedBackground:SetWidth(_db[WIDTH])
+    rangedBackground:SetHeight(_db[HEIGHT])
+
+    rangedProgressBar = CreateFrame("FRAME", nil, rangedBackground)
+    rangedProgressBar:SetPoint("TOPLEFT", rangedBackground, "TOPLEFT", 0, 0)
+    rangedProgressBar:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    rangedProgressBar:SetBackdropColor(0.67, 0.83, 0.45, 1)
+    rangedProgressBar:SetFrameLevel(11)
+    rangedProgressBar:SetHeight(_db[HEIGHT])
+    rangedProgressBar:SetWidth(1)
+
+    -- rangedBackground:Hide()
+end
+
+--------
+
+local function createMainHanderMarker()
+    if mainHandMarker or not mainHandBackground then
+        return
+    end
+
+    mainHandMarker = CreateFrame("FRAME", nil, mainHandBackground)
+
+    mainHandMarker:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    mainHandMarker:SetBackdropColor(1, 0, 0, 0.7)
+    mainHandMarker:SetPoint("TOPRIGHT", 0, 0)
+    mainHandMarker:SetHeight(_db[HEIGHT])
+    mainHandMarker:SetFrameLevel(12)
+
+    if _db[IS_MH_MARKER_SHOWN] then
+        showMainHandMarker()
+    else
+        hideMainHandMarker()
+    end
+end
+
+--------
+
+local function createOffHandMarker()
+    if offHandMarker or not offHandBackground then
+        return
+    end
+
+    offHandMarker = CreateFrame("FRAME", nil, offHandBackground)
+
+    offHandMarker:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    offHandMarker:SetBackdropColor(1, 0, 0, 0.7)
+    offHandMarker:SetPoint("TOPRIGHT", 0, 0)
+    offHandMarker:SetHeight(_db[HEIGHT])
+    offHandMarker:SetFrameLevel(12)
+
+    if _db[IS_OH_MARKER_SHOWN] then
+        showOffHandMarker()
+    else
+        hideOffHandMarker()
+    end
+end
+
+--------
+
+local function createRangedMarker()
+    if rangedMarker or not rangedBackground then
+        return
+    end
+
+    rangedMarker = CreateFrame("FRAME", nil, rangedBackground)
+
+    rangedMarker:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
+    rangedMarker:SetBackdropColor(1, 0, 0, 0.7)
+    rangedMarker:SetPoint("TOPRIGHT", 0, 0)
+    rangedMarker:SetHeight(_db[HEIGHT])
+    rangedMarker:SetFrameLevel(12)
+
+    if _db[IS_MH_MARKER_SHOWN] then
+        showRangedMarker()
+    else
+        hideRangedMarker()
+    end
+end
+
+--------
+
+local function constructAddon()
     this:SetWidth(_db[WIDTH] + 2)
-    this:SetHeight(_db[HEIGHT] * 2 + 3)
-    this:SetBackdrop({["bgFile"] = "Interface/CHATFRAME/CHATFRAMEBACKGROUND"})
-    this:SetBackdropColor(0, 0, 0, 1)
+    this:SetHeight(_db[HEIGHT] * 3 + 4)
     this:SetPoint(_db[POSITION_POINT], _db[POSITION_X], _db[POSITION_Y])
 
     if (not _db[IS_ADDON_LOCKED]) then
-        _unlockAddon()
+        unlockAddon()
     end
 
     -- CREATE CHILDREN
-    if not _progress_bar then
-        _progress_bar = _createProgressBar(this, "TOPLEFT", 1, -1)
-    end
-    if not _ranged_progress_bar then
-        _ranged_progress_bar = _createProgressBar(this, "BOTTOMLEFT", 1, 1)
-    end
-    if not _marker then
-        _marker = _createMarker(_progress_bar, "TOPRIGHT", -1, -1)
-    end
-    if not _ranged_marker then
-        _ranged_marker = _createMarker(_ranged_progress_bar, "BOTTOMRIGHT", -1, 1)
-    end
+    createMainHandProgressBar(this)
+    createOffHandProgressBar(this)
+    createRangedProgressBar(this)
 
-    _updateSwingTime()
-    _updateRangedSwingTime()
-    _resetSwingTimer()
-    _resetRangedTimer()
-    _resetVisibility()
+    createMainHanderMarker()
+    createOffHandMarker()
+    createRangedMarker()
 
-    _populateSwingResetActionsList()
-    _populateRequiredEvents()
+    updateSwingTime()
+    updateRangedSwingTime()
+    resetMainHandSwingTimer()
+    resetOffHandSwingTimer()
+    resetRangedSwingTimer()
+    resetVisibility()
 
-    this:SetScript(SCRIPTHANDLER_ON_UPDATE, _updateDisplay)
+    populateSwingResetActionsList()
+    populateRequiredEvents()
+
+    this:SetScript(SCRIPTHANDLER_ON_UPDATE, updateDisplay)
 end
 
 --------
 
-local _destructAddon = function()
+local function destructAddon()
     -- Stop frame updates
     this:SetScript(SCRIPTHANDLER_ON_UPDATE, nil)
 
     -- Remove all registered events
-    _removeEvents()
-    _deactivateSwingTimer()
-    _deactivateAutoAttack()
-    _deactivateAutoRepeatSpell()
+    removeEvents()
+    hideSwingTimers()
+    deactivateAutoAttack()
+    deactivateAutoRepeatSpell()
 end
 
 --------
 
-local _activateAddon = function()
+local function activateAddon()
     if _db[IS_ADDON_ACTIVATED] then
         return
     end
 
-    _constructAddon()
+    constructAddon()
     _db[IS_ADDON_ACTIVATED] = true
 end
 
 --------
 
-local _deactivateAddon = function()
+local function deactivateAddon()
     if not _db[IS_ADDON_ACTIVATED] then
         return
     end
 
-    _destructAddon()
+    destructAddon()
     _db[IS_ADDON_ACTIVATED] = false
     -- This is here and not in the destructor because
-    -- _loadSavedVariables is not in the constructor either.
-    _storeLocalDatabaseToSavedVariables()
+    -- loadSavedVariables is not in the constructor either.
+    storeLocalDatabaseToSavedVariables()
 end
 
 --------
 
-local _slashCmdHandler = function(message, chat_frame)
-    local _, _, command_name, params = _stringFind(message, "^(%S+) *(.*)")
+local function slashCmdHandler(message, chatFrame)
+    local _, _, commandName, params = stringFind(message, "^(%S+) *(.*)")
 
     -- Stringify it
-    command_name = _tostring(command_name)
+    commandName = tostring(commandName)
 
     -- Pull the given command from our list.
-    local command = _command_list[command_name]
+    local command = commandList[commandName]
     if (command) then
         -- Run the command we found.
-        if (_type(command.execute) ~= "function") then
-            _error("Attempt to execute slash command without execution function.")
+        if (type(command.execute) ~= "function") then
+            error("Attempt to execute slash command without execution function.")
         end
 
         command.execute(params)
     else
         -- prt("Print our available command list.");
-        _printSlashCommandList()
+        printSlashCommandList()
     end
 end
 
 --------
 
-local _loadProfileID = function()
-    _unit_name = UnitName("player")
-    _realm_name = GetRealmName()
-    _profile_id = _unit_name .. "-" .. _realm_name
+local function loadProfileID()
+    unitName = UnitName("player")
+    realmName = GetRealmName()
+    profileId = unitName .. "-" .. realmName
 end
 
 --------
 
-local _loadSavedVariables = function()
+local function loadSavedVariables()
     -- First time install
     if not SamuelDB then
         SamuelDB = {}
     end
 
-    -- this should produce an _error if _profile_id is not yet set, as is intended.
-    _db = SamuelDB[_profile_id]
+    -- this should produce an error if profileId is not yet set, as is intended.
+    _db = SamuelDB[profileId]
 
     -- This means we have a new char.
     if not _db then
-        _db = _default_db
+        _db = _defaultDB
     end
 
     -- In this case we have a player with an older version DB.
-    if (not _db[DB_VERSION]) or (_db[DB_VERSION] < _default_db[DB_VERSION]) then
+    if (not _db[DB_VERSION]) or (_db[DB_VERSION] < _defaultDB[DB_VERSION]) then
         -- For now we just blindly attempt to merge.
-        _db = merge(_default_db, _db)
+        _db = merge(_defaultDB, _db)
     end
 end
 
@@ -809,196 +1142,299 @@ end
 -- PUBLIC METHODS ----------------------------------------------
 ----------------------------------------------------------------
 
-local setMarkerSize = function(time_in_seconds)
+local function setMainHandMarkerSize(timeInSeconds)
     -- Stop arsin about!
-    if time_in_seconds == _db[MARKER_SIZE] then
+    if timeInSeconds == _db[MH_MARKER_SIZE] then
         return
     end
 
-    time_in_seconds = tonumber(time_in_seconds)
-    if not time_in_seconds then
-        _report("setMarkerSize expects", "a number in seconds")
+    timeInSeconds = tonumber(timeInSeconds)
+    if not timeInSeconds then
+        report("setMainHandMarkerSize expects", "a number in seconds")
         return
     end
 
-    if time_in_seconds < 0 then
-        _report("setMarkerSize expects", "time in seconds to be 0 or more")
+    if timeInSeconds < 0 then
+        report("setMainHandMarkerSize expects", "time in seconds to be 0 or more")
         return
     end
 
-    -- Update local database
-    _db[MARKER_SIZE] = time_in_seconds
-    _report("Saved marker size to", _db[MARKER_SIZE])
-    -- Marker is dependant on time_in_seconds so update it now.
-    _updateSlamMarker()
+    _db[MH_MARKER_SIZE] = timeInSeconds
+    report("Saved main-hand marker size to", _db[MH_MARKER_SIZE])
+    updateMainHandMarker()
 end
 
 --------
 
-local setRangedMarkerSize = function(time_in_seconds)
+local function setOffHandMarkerSize(timeInSeconds)
     -- Stop arsin about!
-    if time_in_seconds == _db[RANGED_MARKER_SIZE] then
+    if timeInSeconds == _db[OH_MARKER_SIZE] then
         return
     end
 
-    time_in_seconds = tonumber(time_in_seconds)
-    if not time_in_seconds then
-        _report("setRangedMarkerSize expects", "a number in seconds")
+    timeInSeconds = tonumber(timeInSeconds)
+    if not timeInSeconds then
+        report("setOffHandMarkerSize expects", "a number in seconds")
         return
     end
 
-    if time_in_seconds < 0 then
-        _report("setRangedMarkerSize expects", "time in seconds to be 0 or more")
+    if timeInSeconds < 0 then
+        report("setOffHandMarkerSize expects", "time in seconds to be 0 or more")
         return
     end
 
-    -- Update local database
-    _db[RANGED_MARKER_SIZE] = time_in_seconds
-    _report("Saved ranged marker size to", _db[RANGED_MARKER_SIZE])
-    -- Marker is dependant on time_in_seconds so update it now.
-    _updateSlamMarker()
+    _db[OH_MARKER_SIZE] = timeInSeconds
+    report("Saved off-hand marker size to", _db[OH_MARKER_SIZE])
+    updateOffHandMarker()
 end
 
 --------
 
-local toggleMarkerVisibility = function()
-    if _db[IS_MARKER_SHOWN] then
-        _hideMarker()
+local function setRangedMarkerSize(timeInSeconds)
+    -- Stop arsin about!
+    if timeInSeconds == _db[RANGED_MARKER_SIZE] then
+        return
+    end
+
+    timeInSeconds = tonumber(timeInSeconds)
+    if not timeInSeconds then
+        report("setRangedMarkerSize expects", "a number in seconds")
+        return
+    end
+
+    if timeInSeconds < 0 then
+        report("setRangedMarkerSize expects", "time in seconds to be 0 or more")
+        return
+    end
+
+    _db[RANGED_MARKER_SIZE] = timeInSeconds
+    report("Saved ranged marker size to", _db[RANGED_MARKER_SIZE])
+    updateMainHandMarker()
+end
+
+--------
+
+local function toggleMainHandMarkerVisibility()
+    if _db[IS_MH_MARKER_SHOWN] then
+        hideMainHandMarker()
     else
-        _showMarker()
+        showMainHandMarker()
     end
 
-    _report("Marker is", (_db[IS_MARKER_SHOWN] and "Showing" or "Hidden"))
+    report("Main-hand marker is", (_db[IS_MH_MARKER_SHOWN] and "Showing" or "Hidden"))
 end
 
 --------
 
-local toggleRangedMarkerVisibility = function()
+local function toggleOffHandMarkerVisibility()
+    if _db[IS_OH_MARKER_SHOWN] then
+        hideOffHandMarker()
+    else
+        showOffHandMarker()
+    end
+
+    report("Off-hand marker is", (_db[IS_OH_MARKER_SHOWN] and "Showing" or "Hidden"))
+end
+
+--------
+
+local function toggleRangedMarkerVisibility()
     if _db[IS_RANGED_MARKER_SHOWN] then
-        _hideRangedMarker()
+        hideRangedMarker()
     else
-        _showRangedMarker()
+        showRangedMarker()
     end
 
-    _report("Ranged marker is", (_db[IS_RANGED_MARKER_SHOWN] and "Showing" or "Hidden"))
+    report("Ranged marker is", (_db[IS_RANGED_MARKER_SHOWN] and "Showing" or "Hidden"))
 end
 
 --------
 
-local toggleLockToScreen = function()
+local function toggleLockToScreen()
     -- Inversed logic to lock the addon if _db[IS_ADDON_LOCKED] returns 'nil' for some reason.
     if not _db[IS_ADDON_LOCKED] then
-        _lockAddon()
+        lockAddon()
     else
-        _unlockAddon()
+        unlockAddon()
     end
 
-    _report("Swing timer bar", (_db[IS_ADDON_LOCKED] and "Locked" or "Unlocked"))
+    report("Swing timer bar", (_db[IS_ADDON_LOCKED] and "Locked" or "Unlocked"))
 end
 
 --------
 
-local toggleAddonActivity = function()
+local function toggleOffHandBar()
+    if _db[OH_BAR_SHOWN] then
+        hideOHBar()
+    else
+        showOHBar()
+    end
+
+    report("Off-hand bar is", (_db[OH_BAR_SHOWN] and "Showing" or "Hidden"))
+end
+
+--------
+
+local function toggleRangedBar()
+    if _db[RANGED_BAR_SHOWN] then
+        hideRangedBar()
+    else
+        showRangedBar()
+    end
+
+    report("Ranged bar is", (_db[RANGED_BAR_SHOWN] and "Showing" or "Hidden"))
+end
+
+--------
+
+local function toggleAddonActivity()
     if not _db[IS_ADDON_ACTIVATED] then
-        _activateAddon()
+        activateAddon()
     else
-        _deactivateAddon()
+        deactivateAddon()
     end
 
-    _report("is now", (_db[IS_ADDON_ACTIVATED] and "Activated" or "Deactivated"))
+    report("is now", (_db[IS_ADDON_ACTIVATED] and "Activated" or "Deactivated"))
 end
 
 --------
 
-local setBarWidth = function(value)
+local function toggleDebugging()
+    if not _db[IS_DEBUGGING] then
+        _db[IS_DEBUGGING] = true
+    else
+        _db[IS_DEBUGGING] = false
+    end
+
+    report("Debugging", (_db[IS_DEBUGGING] and "Yes" or "No"))
+end
+
+--------
+
+local function setBarWidth(value)
     _db[WIDTH] = value
 
-    _report("bar width set to", value)
+    report("bar width set to", value)
 end
 
 --------
 
-local setBarHeight = function(value)
+local function setBarHeight(value)
     _db[HEIGHT] = value
 
-    _report("bar height set to", value)
+    report("bar height set to", value)
 end
 
 --------
 
-local _populateSlashCommandList = function()
+local function populateSlashCommandList()
     -- For now we just reset this thing.
-    _command_list = {}
+    commandList = {}
 
-    _addSlashCommand(
-        "setMarkerSize",
-        setMarkerSize,
-        "[|cffffff330+|r] |cff999999\n\t-- Set the amount of seconds of your swing time the marker should cover.|r",
-        MARKER_SIZE
+    addSlashCommand(
+        "toggleOffHandBar",
+        toggleOffHandBar,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the off-hand bar is showing.|r",
+        OH_BAR_SHOWN
     )
 
-    _addSlashCommand(
+    addSlashCommand(
+        "toggleRangedBar",
+        toggleRangedBar,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the ranged bar is showing.|r",
+        RANGED_BAR_SHOWN
+    )
+
+    addSlashCommand(
+        "showMainHandMarker",
+        toggleMainHandMarkerVisibility,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the red main-hand marker is showing.|r",
+        IS_MH_MARKER_SHOWN
+    )
+
+    addSlashCommand(
+        "setMainHandMarkerSize",
+        setMainHandMarkerSize,
+        "[|cffffff330+|r] |cff999999\n\t-- Set the amount of seconds of your swing time the main-hand marker should cover.|r",
+        MH_MARKER_SIZE
+    )
+
+    addSlashCommand(
+        "showOffHandMarker",
+        toggleOffHandMarkerVisibility,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the red off-hand marker is showing.|r",
+        IS_MH_MARKER_SHOWN
+    )
+
+    addSlashCommand(
+        "setOffHandMarkerSize",
+        setOffHandMarkerSize,
+        "[|cffffff330+|r] |cff999999\n\t-- Set the amount of seconds of your swing time the off-hand marker should cover.|r",
+        OH_MARKER_SIZE
+    )
+
+    addSlashCommand(
+        "showRangedMarker",
+        toggleRangedMarkerVisibility,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the red ranged marker is showing.|r",
+        IS_RANGED_MARKER_SHOWN
+    )
+
+    addSlashCommand(
         "setRangedMarkerSize",
         setRangedMarkerSize,
         "[|cffffff330+|r] |cff999999\n\t-- Set the amount of seconds of your ranged time the marker should cover.|r",
         RANGED_MARKER_SIZE
     )
 
-    _addSlashCommand(
-        "showMarker",
-        toggleMarkerVisibility,
-        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the red marker is showing.|r",
-        IS_MARKER_SHOWN
-    )
-
-    _addSlashCommand(
-        "showRangedMarker",
-        toggleRangedMarkerVisibility,
-        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the red marker is showing for ranged.|r",
-        IS_RANGED_MARKER_SHOWN
-    )
-
-    _addSlashCommand(
+    addSlashCommand(
         "lock",
         toggleLockToScreen,
         "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the bar is locked to the screen.|r",
         IS_ADDON_LOCKED
     )
 
-    _addSlashCommand(
+    addSlashCommand(
         "activate",
         toggleAddonActivity,
         "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether the AddOn itself is active.|r",
         IS_ADDON_ACTIVATED
     )
 
-    _addSlashCommand("setBarWidth", setBarWidth, "[|cffffff330+|r] |cff999999\n\t-- Set the width of the bar.|r", WIDTH)
+    addSlashCommand("setBarWidth", setBarWidth, "[|cffffff330+|r] |cff999999\n\t-- Set the width of the bar.|r", WIDTH)
 
-    _addSlashCommand(
+    addSlashCommand(
         "setBarHeight",
         setBarHeight,
         "[|cffffff330+|r] |cff999999\n\t-- Set the height of the bar.|r",
         HEIGHT
     )
+
+    addSlashCommand(
+        "debug",
+        toggleDebugging,
+        "<|cff9999fftoggle|r> |cff999999\n\t-- Toggle whether debug messages are shown.|r",
+        IS_DEBUGGING
+    )
 end
 
 --------
 
-local _initialise = function()
-    _loadProfileID()
-    _loadSavedVariables()
+local function initialise()
+    loadProfileID()
+    loadSavedVariables()
 
-    this:UnregisterEvent(_initialisation_event)
+    this:UnregisterEvent(initialisationEvent)
 
-    _event_handlers = {}
+    eventHandlers = {}
 
-    _populateSlashCommandList()
-    this:SetScript(SCRIPTHANDLER_ON_EVENT, _eventCoordinator)
+    populateSlashCommandList()
+    this:SetScript(SCRIPTHANDLER_ON_EVENT, eventCoordinator)
 
-    _addEvent("PLAYER_LOGOUT", _storeLocalDatabaseToSavedVariables)
+    addEvent("PLAYER_LOGOUT", storeLocalDatabaseToSavedVariables)
 
     if _db[IS_ADDON_ACTIVATED] then
-        _constructAddon()
+        constructAddon()
     end
 end
 
@@ -1007,7 +1443,7 @@ SLASH_SAMUEL1 = "/sam"
 SLASH_SAMUEL2 = "/samuel"
 
 -- And add a handler to react on the above matches.
-SlashCmdList["SAMUEL"] = _slashCmdHandler
+SlashCmdList["SAMUEL"] = slashCmdHandler
 
-this:SetScript(SCRIPTHANDLER_ON_EVENT, _initialise)
-this:RegisterEvent(_initialisation_event)
+this:SetScript(SCRIPTHANDLER_ON_EVENT, initialise)
+this:RegisterEvent(initialisationEvent)
